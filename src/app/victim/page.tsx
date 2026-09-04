@@ -14,7 +14,10 @@ import {
   WifiOff, 
   SunMedium,
   Megaphone,
-  X
+  X,
+  Truck,
+  Clock,
+  RotateCcw
 } from 'lucide-react';
 
 interface BroadcastAlert {
@@ -22,6 +25,8 @@ interface BroadcastAlert {
   severity: 'CRITICAL' | 'ADVISORY';
   timestamp: string;
 }
+
+type IncidentStatus = 'pending' | 'dispatched' | 'resolved';
 
 export default function VictimPage() {
   const [stage, setStage] = useState<'trigger' | 'followup'>('trigger');
@@ -34,10 +39,11 @@ export default function VictimPage() {
   // Connectivity & State
   const [isOffline, setIsOffline] = useState(false);
   const [incidentId, setIncidentId] = useState<string | null>(null);
+  const [incidentStatus, setIncidentStatus] = useState<IncidentStatus>('pending');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  // Broadcast Alert State (From Rescuer Command)
+  // Broadcast Alert State
   const [activeBroadcast, setActiveBroadcast] = useState<BroadcastAlert | null>(null);
 
   // Stage 1 Selection
@@ -75,14 +81,46 @@ export default function VictimPage() {
     };
   }, []);
 
-  // Listen for Realtime Broadcast Alerts from Rescuer Command
+  // BIDIRECTIONAL STATUS SYNC: Listen for dispatcher state changes on this specific incident
+  useEffect(() => {
+    if (!incidentId) return;
+
+    const channel = supabase
+      .channel(`incident-tracking-${incidentId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'distress_incidents',
+          filter: `id=eq.${incidentId}`,
+        },
+        (payload) => {
+          if (payload.new && (payload.new as any).status) {
+            const updatedStatus = (payload.new as any).status as IncidentStatus;
+            setIncidentStatus(updatedStatus);
+
+            // Haptic feedback to alert user that dispatch status changed
+            if ('vibrate' in navigator) {
+              navigator.vibrate([200, 100, 200, 100, 300]);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [incidentId]);
+
+  // Listen for Realtime Broadcast Alerts from Command
   useEffect(() => {
     const broadcastChannel = supabase
       .channel('disaster-broadcasts')
       .on('broadcast', { event: 'evacuation_alert' }, (payload) => {
         if (payload?.payload) {
           setActiveBroadcast(payload.payload as BroadcastAlert);
-          // Haptic alert on mobile hardware
           if ('vibrate' in navigator) {
             navigator.vibrate([300, 150, 300, 150, 400]);
           }
@@ -148,6 +186,7 @@ export default function VictimPage() {
       if (error) throw error;
 
       setIncidentId(data);
+      setIncidentStatus('pending');
       setStage('followup');
     } catch (err: any) {
       console.error('Data broadcast failed:', err);
@@ -204,27 +243,93 @@ export default function VictimPage() {
     }
   };
 
+  const handleReopenDistress = async () => {
+    if (!incidentId) return;
+    try {
+      await supabase
+        .from('distress_incidents')
+        .update({
+          status: 'pending',
+          priority_score: 95,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', incidentId);
+
+      setIncidentStatus('pending');
+    } catch (err) {
+      console.error('Failed to reopen distress:', err);
+    }
+  };
+
+  // BATTERY PRESERVATION SCREEN (NOW COMPLETELY DYNAMIC)
   if (batterySaver) {
     return (
       <main className="min-h-screen bg-black text-neutral-400 font-mono flex flex-col justify-between p-6 select-none">
         <div className="space-y-4 pt-8">
-          <div className="inline-flex items-center gap-2 border border-emerald-900 bg-emerald-950/40 text-emerald-400 px-3 py-1 rounded text-xs">
-            <CheckCircle2 className="w-4 h-4" />
-            <span>BEACON TRANSMITTED & LOGGED</span>
-          </div>
+          {/* Dynamic Status Badge */}
+          {incidentStatus === 'pending' && (
+            <div className="inline-flex items-center gap-2 border border-amber-800 bg-amber-950/40 text-amber-300 px-3 py-1 rounded text-xs">
+              <Clock className="w-4 h-4 animate-pulse" />
+              <span>BEACON QUEUED &bull; AWAITING DISPATCH</span>
+            </div>
+          )}
+
+          {incidentStatus === 'dispatched' && (
+            <div className="inline-flex items-center gap-2 border border-blue-700 bg-blue-950/60 text-blue-300 px-3 py-1 rounded text-xs font-bold animate-pulse">
+              <Truck className="w-4 h-4" />
+              <span>RESCUE TEAM EN ROUTE</span>
+            </div>
+          )}
+
+          {incidentStatus === 'resolved' && (
+            <div className="inline-flex items-center gap-2 border border-emerald-800 bg-emerald-950/40 text-emerald-400 px-3 py-1 rounded text-xs font-bold">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>INCIDENT MARKED RESOLVED</span>
+            </div>
+          )}
 
           <h1 className="text-xl font-bold text-neutral-200">
-            Battery Preservation Active
+            {incidentStatus === 'dispatched' 
+              ? 'First Responders Deployed' 
+              : incidentStatus === 'resolved'
+              ? 'Rescue Operation Complete'
+              : 'Battery Preservation Active'}
           </h1>
+
           <p className="text-xs text-neutral-500 leading-relaxed">
-            GPS polling halted. Keep your device on this screen until rescue teams arrive.
+            {incidentStatus === 'dispatched'
+              ? 'Rescuers are navigating to your location. Keep your position visible if safe.'
+              : incidentStatus === 'resolved'
+              ? 'Command center logged this incident as resolved.'
+              : 'GPS polling halted. Keep this screen active until rescue teams arrive.'}
           </p>
 
           <div className="border border-neutral-900 bg-neutral-950 p-3 rounded text-xs space-y-1 text-neutral-400">
             <div>Incident Cluster: <span className="text-neutral-200">{incidentId?.slice(0, 8)}...</span></div>
             <div>Coordinates: <span className="text-neutral-200">{coords?.lat.toFixed(4)}, {coords?.lng.toFixed(4)}</span></div>
-            <div>Status: <span className="text-emerald-400 font-bold">QUEUED FOR DISPATCH</span></div>
+            <div>
+              Status:{' '}
+              <span className={`font-bold uppercase ${
+                incidentStatus === 'dispatched' ? 'text-blue-400' :
+                incidentStatus === 'resolved' ? 'text-emerald-400' : 'text-amber-400'
+              }`}>
+                {incidentStatus === 'dispatched' ? 'TEAM EN ROUTE (DISPATCHED)' :
+                 incidentStatus === 'resolved' ? 'RESOLVED BY COMMAND' : 'QUEUED FOR DISPATCH'}
+              </span>
+            </div>
           </div>
+
+          {/* Premature resolution fail-safe */}
+          {incidentStatus === 'resolved' && (
+            <button
+              type="button"
+              onClick={handleReopenDistress}
+              className="w-full py-2.5 rounded border border-red-800 bg-red-950/50 text-red-300 flex items-center justify-center gap-2 text-xs font-bold"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Still in danger? Tap to re-open SOS
+            </button>
+          )}
         </div>
 
         <div className="space-y-3 pb-4">
@@ -301,7 +406,7 @@ export default function VictimPage() {
         </div>
       </header>
 
-      {/* STAGE 1 */}
+      {/* STAGE 1: MINIMAL 1-TAP SOS */}
       {stage === 'trigger' && (
         <div className="flex-1 flex flex-col justify-center space-y-5 my-4">
           <div className="text-center space-y-1">
@@ -379,22 +484,64 @@ export default function VictimPage() {
         </div>
       )}
 
-      {/* STAGE 2 */}
+      {/* STAGE 2: PROGRESSIVE TRIAGE FOLLOW-UPS (WITH DYNAMIC STATUS BANNER) */}
       {stage === 'followup' && (
         <div className="flex-1 flex flex-col justify-between py-3 space-y-4">
-          <div className="bg-emerald-950/60 border border-emerald-800 p-3 rounded-xl flex items-center gap-3">
-            <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
-            <div>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-emerald-200">
-                Beacon Dispatched
-              </h2>
-              <p className="text-[11px] text-emerald-300/80">
-                Coordinates locked. Answer below to equip field units:
-              </p>
+          {/* Dynamic Real-time Status Card */}
+          {incidentStatus === 'pending' && (
+            <div className="bg-amber-950/60 border border-amber-800 p-3 rounded-xl flex items-center gap-3">
+              <Clock className="w-6 h-6 text-amber-400 shrink-0 animate-pulse" />
+              <div>
+                <h2 className="text-xs font-bold uppercase tracking-wider text-amber-200">
+                  Beacon Queued for Dispatch
+                </h2>
+                <p className="text-[11px] text-amber-300/80">
+                  Sector Command received your location. Provide details below to equip rescuers:
+                </p>
+              </div>
             </div>
-          </div>
+          )}
+
+          {incidentStatus === 'dispatched' && (
+            <div className="bg-blue-950/70 border border-blue-600 p-3 rounded-xl flex items-center gap-3 shadow-[0_0_15px_rgba(59,130,246,0.3)] animate-pulse">
+              <Truck className="w-6 h-6 text-blue-400 shrink-0" />
+              <div>
+                <h2 className="text-xs font-black uppercase tracking-wider text-blue-200">
+                  Rescue Units Dispatched
+                </h2>
+                <p className="text-[11px] text-blue-300">
+                  Emergency responders have been deployed and are en route to your coordinates.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {incidentStatus === 'resolved' && (
+            <div className="bg-emerald-950/80 border border-emerald-600 p-3 rounded-xl space-y-2">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
+                <div>
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-emerald-200">
+                    Incident Marked Resolved
+                  </h2>
+                  <p className="text-[11px] text-emerald-300/80">
+                    Command center has closed this incident.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleReopenDistress}
+                className="w-full py-1.5 rounded bg-neutral-900 border border-neutral-700 text-[11px] font-bold text-neutral-300 flex items-center justify-center gap-1.5 hover:text-white"
+              >
+                <RotateCcw className="w-3 h-3 text-red-400" />
+                Still need urgent help? Re-open incident
+              </button>
+            </div>
+          )}
 
           <div className="space-y-4 bg-neutral-900/60 p-4 rounded-xl border border-neutral-800">
+            {/* Question 1: Headcount */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-neutral-200 flex items-center justify-between">
                 <span>1. People stranded:</span>
@@ -418,6 +565,7 @@ export default function VictimPage() {
               </div>
             </div>
 
+            {/* Question 2: Critical Condition Toggles */}
             <div className="space-y-2 pt-2 border-t border-neutral-800">
               <label className="text-xs font-bold text-neutral-200 block">
                 2. Immediate Hazards / Vulnerabilities
@@ -451,6 +599,7 @@ export default function VictimPage() {
               </div>
             </div>
 
+            {/* Question 3: Micro-Location */}
             <div className="space-y-1.5 pt-2 border-t border-neutral-800">
               <label className="text-xs font-bold text-neutral-200 block">
                 3. Landmark / Exact Spot (Optional)
@@ -477,7 +626,7 @@ export default function VictimPage() {
               ) : enrichmentSaved ? (
                 <>
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Updates Dispatched! Entering Battery Saver...</span>
+                  <span>Field Notes Synced! Entering Battery Saver...</span>
                 </>
               ) : (
                 <>

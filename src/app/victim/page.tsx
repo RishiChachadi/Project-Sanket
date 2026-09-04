@@ -18,8 +18,7 @@ import {
   Truck,
   Clock,
   RotateCcw,
-  Timer,
-  Globe
+  Timer
 } from 'lucide-react';
 
 interface BroadcastAlert {
@@ -119,7 +118,7 @@ const TRANSLATIONS = {
     stage1Heading: 'आपातकालीन संकट (SOS)',
     stage1Sub: 'बचाव दल को अपना स्थान भेजने के लिए एक बार टैप करें।',
     selectDanger: 'तत्काल संकट चुनें',
-    flood: 'बाढ़ / पानी का भराव',
+    flood: 'बाढ़ / जल भराव',
     fire: 'आग का संकट',
     trapped: 'फंसे हुए हैं / मलबा',
     medical: 'चिकित्सा आपातकाल',
@@ -153,6 +152,42 @@ const TRANSLATIONS = {
     helpline: 'राष्ट्रीय आपातकालीन हेल्पलाइन: 112 पर कॉल करें',
   },
 };
+
+// Hazard configuration with emojis and chromatic color tokens
+const HAZARD_CONFIG = [
+  {
+    id: 'Flood',
+    emoji: '🌊',
+    key: 'flood' as const,
+    activeClasses: 'border-blue-500 bg-blue-950/60 text-blue-200 shadow-[0_0_15px_rgba(59,130,246,0.35)]',
+    sosGradient: 'from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 border-blue-400/50 shadow-[0_0_40px_rgba(59,130,246,0.4)]',
+    badgeText: 'text-blue-200',
+  },
+  {
+    id: 'Fire',
+    emoji: '🔥',
+    key: 'fire' as const,
+    activeClasses: 'border-red-500 bg-red-950/60 text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.35)]',
+    sosGradient: 'from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 border-red-400/50 shadow-[0_0_40px_rgba(239,68,68,0.4)]',
+    badgeText: 'text-red-200',
+  },
+  {
+    id: 'Trapped',
+    emoji: '🏚️',
+    key: 'trapped' as const,
+    activeClasses: 'border-amber-500 bg-amber-950/60 text-amber-200 shadow-[0_0_15px_rgba(245,158,11,0.35)]',
+    sosGradient: 'from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 border-amber-400/50 shadow-[0_0_40px_rgba(245,158,11,0.4)]',
+    badgeText: 'text-amber-200',
+  },
+  {
+    id: 'Medical',
+    emoji: '🚑',
+    key: 'medical' as const,
+    activeClasses: 'border-emerald-500 bg-emerald-950/60 text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.35)]',
+    sosGradient: 'from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 border-emerald-400/50 shadow-[0_0_40px_rgba(16,185,129,0.4)]',
+    badgeText: 'text-emerald-200',
+  },
+];
 
 export default function VictimPage() {
   const [lang, setLang] = useState<Language>('EN');
@@ -192,6 +227,9 @@ export default function VictimPage() {
 
   // Battery Saver Mode
   const [batterySaver, setBatterySaver] = useState<boolean>(false);
+
+  // Active Hazard Token
+  const activeHazardConfig = HAZARD_CONFIG.find((h) => h.id === selectedHazard) || HAZARD_CONFIG[0];
 
   const startGpsWatcher = useCallback(() => {
     if (!('geolocation' in navigator)) return;
@@ -577,7 +615,7 @@ export default function VictimPage() {
         </div>
       )}
 
-      {/* Top Telemetry Ribbon with 1-Tap Vernacular Switcher */}
+      {/* Header Telemetry Ribbon */}
       <header className="flex items-center justify-between border-b border-neutral-800 pb-3">
         <div className="flex items-center gap-2">
           <Radio className="w-5 h-5 text-red-500 animate-pulse" />
@@ -585,7 +623,6 @@ export default function VictimPage() {
         </div>
         
         <div className="flex items-center gap-2">
-          {/* Vernacular Language Selector */}
           <div className="flex items-center bg-neutral-900 border border-neutral-800 rounded-lg p-0.5 text-[11px] font-bold">
             {(['EN', 'KN', 'HI'] as Language[]).map((l) => (
               <button
@@ -612,7 +649,7 @@ export default function VictimPage() {
         </div>
       </header>
 
-      {/* STAGE 1: 1-TAP PANIC BEACON */}
+      {/* STAGE 1: CHROMATIC 1-TAP SOS */}
       {stage === 'trigger' && (
         <div className="flex-1 flex flex-col justify-center space-y-5 my-4">
           <div className="text-center space-y-1">
@@ -624,49 +661,53 @@ export default function VictimPage() {
             </p>
           </div>
 
+          {/* Color-Coded Hazard Selectors with Emojis */}
           <div className="space-y-2">
             <label className="text-[10px] font-mono tracking-wider uppercase text-neutral-400">
               {t.selectDanger}
             </label>
             <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: 'Flood', label: t.flood },
-                { id: 'Fire', label: t.fire },
-                { id: 'Trapped', label: t.trapped },
-                { id: 'Medical', label: t.medical },
-              ].map((h) => (
-                <button
-                  key={h.id}
-                  type="button"
-                  onClick={() => setSelectedHazard(h.id)}
-                  className={`p-3 rounded-lg text-xs font-bold border transition-all text-left ${
-                    selectedHazard === h.id
-                      ? 'border-red-500 bg-red-950/40 text-red-200'
-                      : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-700'
-                  }`}
-                >
-                  {h.label}
-                </button>
-              ))}
+              {HAZARD_CONFIG.map((h) => {
+                const isSelected = selectedHazard === h.id;
+                return (
+                  <button
+                    key={h.id}
+                    type="button"
+                    onClick={() => setSelectedHazard(h.id)}
+                    className={`p-3 rounded-xl text-xs font-bold border transition-all text-left flex items-center gap-2.5 ${
+                      isSelected
+                        ? h.activeClasses
+                        : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-700 hover:bg-neutral-850'
+                    }`}
+                  >
+                    <span className="text-lg shrink-0 leading-none">{h.emoji}</span>
+                    <span className="leading-tight">{t[h.key]}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
+          {/* Dynamic Chromatic SOS Button (Shifts Blue for Flood, Red for Fire, etc.) */}
           <div className="pt-2">
             <button
               type="button"
               disabled={isSubmitting}
               onClick={handleInitialSOS}
-              className="w-full h-40 rounded-2xl bg-gradient-to-b from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 active:scale-95 transition-all shadow-[0_0_40px_rgba(239,68,68,0.35)] flex flex-col items-center justify-center gap-2 border-2 border-red-400/40"
+              className={`w-full h-40 rounded-2xl bg-gradient-to-b ${activeHazardConfig.sosGradient} active:scale-95 transition-all flex flex-col items-center justify-center gap-2 border-2 text-white`}
             >
               {isSubmitting ? (
                 <Loader2 className="w-12 h-12 animate-spin text-white" />
               ) : (
                 <>
-                  <AlertOctagon className="w-12 h-12 text-white" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">{activeHazardConfig.emoji}</span>
+                    <AlertOctagon className="w-10 h-10 text-white" />
+                  </div>
                   <span className="text-xl font-black uppercase tracking-widest">
                     {t.transmitSos}
                   </span>
-                  <span className="text-[10px] text-red-200 font-mono">
+                  <span className={`text-[10px] ${activeHazardConfig.badgeText} font-mono`}>
                     {t.instantTagged}
                   </span>
                 </>

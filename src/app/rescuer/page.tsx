@@ -34,6 +34,32 @@ const RescuerMap = dynamic(() => import('@/components/RescuerMap'), {
   ),
 });
 
+function getHazardBadge(type: string) {
+  const t = type.toLowerCase();
+  if (t === 'flood') {
+    return {
+      emoji: '🌊',
+      badgeClass: 'bg-blue-950 text-blue-300 border-blue-800 border',
+    };
+  }
+  if (t === 'fire') {
+    return {
+      emoji: '🔥',
+      badgeClass: 'bg-red-950 text-red-300 border-red-800 border',
+    };
+  }
+  if (t === 'trapped') {
+    return {
+      emoji: '🏚️',
+      badgeClass: 'bg-amber-950 text-amber-300 border-amber-800 border',
+    };
+  }
+  return {
+    emoji: '🚑',
+    badgeClass: 'bg-emerald-950 text-emerald-300 border-emerald-800 border',
+  };
+}
+
 export default function RescuerDashboardPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
@@ -229,7 +255,6 @@ export default function RescuerDashboardPage() {
     return inc.hazard_type.toLowerCase() === selectedFilter.toLowerCase();
   });
 
-  // Calculate nearest Emergency Response Bases (Fire, NDRF, Hospital)
   const nearestBases = selectedIncident
     ? EMERGENCY_BASES.filter((b) => b.type !== 'SHELTER')
         .map((b) => ({
@@ -245,7 +270,6 @@ export default function RescuerDashboardPage() {
         .slice(0, 2)
     : [];
 
-  // Specifically calculate the Nearest Safe Evacuation Shelter
   const nearestShelter = selectedIncident
     ? EMERGENCY_BASES.filter((b) => b.type === 'SHELTER')
         .map((b) => ({
@@ -356,20 +380,26 @@ export default function RescuerDashboardPage() {
             </button>
           </div>
 
-          {/* Filter Chips */}
+          {/* Filter Chips with Emojis */}
           <div className="p-2.5 border-b border-neutral-800 flex items-center gap-1 overflow-x-auto text-[11px] font-mono no-scrollbar">
-            {['ALL', 'Flood', 'Fire', 'Medical', 'Trapped'].map((filter) => (
+            {[
+              { id: 'ALL', label: 'ALL' },
+              { id: 'Flood', label: '🌊 Flood' },
+              { id: 'Fire', label: '🔥 Fire' },
+              { id: 'Medical', label: '🚑 Medical' },
+              { id: 'Trapped', label: '🏚️ Trapped' },
+            ].map((filter) => (
               <button
-                key={filter}
+                key={filter.id}
                 type="button"
-                onClick={() => setSelectedFilter(filter)}
+                onClick={() => setSelectedFilter(filter.id)}
                 className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap ${
-                  selectedFilter === filter
+                  selectedFilter === filter.id
                     ? 'bg-neutral-100 text-neutral-950 font-bold'
                     : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'
                 }`}
               >
-                {filter}
+                {filter.label}
               </button>
             ))}
           </div>
@@ -383,7 +413,7 @@ export default function RescuerDashboardPage() {
             ) : (
               filteredIncidents.map((item) => {
                 const isSelected = selectedIncident?.id === item.id;
-                const isCritical = item.priority_score >= 75;
+                const hazardInfo = getHazardBadge(item.hazard_type);
 
                 return (
                   <div
@@ -396,10 +426,9 @@ export default function RescuerDashboardPage() {
                     }`}
                   >
                     <div className="flex items-center justify-between text-xs mb-1">
-                      <span className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
-                        isCritical ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-amber-950 text-amber-400'
-                      }`}>
-                        {item.hazard_type}
+                      <span className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] flex items-center gap-1 ${hazardInfo.badgeClass}`}>
+                        <span>{hazardInfo.emoji}</span>
+                        <span>{item.hazard_type}</span>
                       </span>
                       <span className="font-mono text-neutral-400 text-[11px]">Score: {item.priority_score}</span>
                     </div>

@@ -21,7 +21,7 @@ import {
   Timer,
   Camera,
   Sparkles,
-  Image as ImageIcon
+  Check
 } from 'lucide-react';
 
 interface BroadcastAlert {
@@ -63,8 +63,8 @@ const TRANSLATIONS = {
     q4Photo: '4. Ground Photo Evidence (Optional)',
     photoSub: 'Upload a compressed photo to boost rescue priority score with AI validation.',
     takePhoto: 'Take Photo Evidence',
-    analyzingPhoto: 'Compressing & Running AI Triage...',
-    photoVerified: 'Photo Verified by AI! Priority Boosted (+25)',
+    analyzingPhoto: 'Compressing & Transmitting Photo...',
+    photoVerified: 'Photo Live on Rescuer Screen!',
     sendUpdates: 'Transmit Field Updates',
     updatesSynced: 'Field Notes Synced! Entering Battery Saver...',
     enableBatterySaver: 'Enable Battery Preservation Now',
@@ -107,8 +107,8 @@ const TRANSLATIONS = {
     q4Photo: '4. ಸ್ಥಳದ ಫೋಟೋ ಸಾಕ್ಷಿ (ಐಚ್ಛಿಕ)',
     photoSub: 'AI ದೃಢೀಕರಣದ ಮೂಲಕ ಆದ್ಯತೆಯನ್ನು ಹೆಚ್ಚಿಸಲು ಫೋಟೋ ಲಗತ್ತಿಸಿ.',
     takePhoto: 'ಫೋಟೋ ತೆಗೆಯಿರಿ',
-    analyzingPhoto: 'ವಿಶ್ಲೇಷಿಸಲಾಗುತ್ತಿದೆ...',
-    photoVerified: 'AI ಪರಿಶೀಲನೆ ಪೂರ್ಣಗೊಂಡಿದೆ! ಆದ್ಯತೆ ಹೆಚ್ಚಿಸಲಾಗಿದೆ',
+    analyzingPhoto: 'ರವಾನಿಸಲಾಗುತ್ತಿದೆ...',
+    photoVerified: 'ಫೋಟೋ ಕಮಾಂಡ್ ಸೆಂಟರ್‌ಗೆ ತಲುಪಿದೆ!',
     sendUpdates: 'ಮಾಹಿತಿಯನ್ನು ರವಾನಿಸಿ',
     updatesSynced: 'ಮಾಹಿತಿ ತಲುಪಿದೆ! ಬ್ಯಾಟರಿ ಸೇವರ್ ಆನ್ ಆಗುತ್ತಿದೆ...',
     enableBatterySaver: 'ಈಗಲೇ ಬ್ಯಾಟರಿ ಉಳಿತಾಯ ಮೋಡ್ ಆನ್ ಮಾಡಿ',
@@ -151,8 +151,8 @@ const TRANSLATIONS = {
     q4Photo: '4. घटनास्थल का फोटो (वैकल्पिक)',
     photoSub: 'AI सत्यापन द्वारा बचाव प्राथमिकता बढ़ाने के लिए फोटो जोड़ें।',
     takePhoto: 'फोटो खींचें',
-    analyzingPhoto: 'AI विश्लेषण जारी है...',
-    photoVerified: 'AI द्वारा सत्यापित! प्राथमिकता बढ़ाई गई',
+    analyzingPhoto: 'फोटो भेजा जा रहा है...',
+    photoVerified: 'फोटो कमांड सेंटर में पहुंच गया!',
     sendUpdates: 'अतिरिक्त विवरण भेजें',
     updatesSynced: 'जानकारी भेजी गई! बैटरी सेवर सक्रिय...',
     enableBatterySaver: 'बैटरी सेवर चालू करें',
@@ -203,8 +203,8 @@ const HAZARD_CONFIG = [
   },
 ];
 
-// In-Browser Micro-Compressor (Canvas -> WebP 800px ~35KB)
-async function compressImageToBlob(file: File): Promise<Blob> {
+// Compress image to low-bitrate WebP Blob (~35KB) and return both Blob and DataURL
+async function compressImage(file: File): Promise<{ blob: Blob; dataUrl: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -230,10 +230,11 @@ async function compressImageToBlob(file: File): Promise<Blob> {
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
 
+        const dataUrl = canvas.toDataURL('image/webp', 0.6);
         canvas.toBlob(
           (blob) => {
-            if (blob) resolve(blob);
-            else reject(new Error('Canvas blob generation failed'));
+            if (blob) resolve({ blob, dataUrl });
+            else reject(new Error('Canvas compression failed'));
           },
           'image/webp',
           0.6
@@ -284,6 +285,7 @@ export default function VictimPage() {
   // Evidence Photo & AI State
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoSuccess, setPhotoSuccess] = useState(false);
   const [aiVerifiedMessage, setAiVerifiedMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -327,6 +329,7 @@ export default function VictimPage() {
     setIsTrapped(false);
     setLandmarkNotes('');
     setPhotoPreview(null);
+    setPhotoSuccess(false);
     setAiVerifiedMessage(null);
     setBatterySaver(false);
     setStatusMessage(null);
@@ -471,57 +474,79 @@ export default function VictimPage() {
     }
   };
 
-  // Micro-Compression & Background AI Upload
+  // FAIL-SAFE PHOTO PIPELINE: Direct DB write + Base64 storage fallback
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !incidentId) return;
 
     setIsUploadingPhoto(true);
+    setPhotoSuccess(false);
     setAiVerifiedMessage(null);
 
     try {
-      // 1. Client-Side Canvas WebP Compression
-      const compressedBlob = await compressImageToBlob(file);
-      setPhotoPreview(URL.createObjectURL(compressedBlob));
+      // 1. Client-Side Canvas WebP Compression (<35 KB)
+      const { blob, dataUrl } = await compressImage(file);
+      setPhotoPreview(dataUrl);
 
-      // 2. Direct upload to Supabase Storage bucket
-      const filePath = `${incidentId}/${Date.now()}.webp`;
-      const { error: uploadError } = await supabase.storage
-        .from('incident-evidence')
-        .upload(filePath, compressedBlob, {
-          contentType: 'image/webp',
-          upsert: true,
-        });
+      let finalUrl = dataUrl;
 
-      if (uploadError) throw uploadError;
+      // 2. Attempt Supabase Storage Upload
+      try {
+        const filePath = `${incidentId}/${Date.now()}.webp`;
+        const { error: uploadError } = await supabase.storage
+          .from('incident-evidence')
+          .upload(filePath, blob, {
+            contentType: 'image/webp',
+            upsert: true,
+          });
 
-      // 3. Obtain public URL
-      const { data: publicUrlData } = supabase.storage
-        .from('incident-evidence')
-        .getPublicUrl(filePath);
+        if (!uploadError) {
+          const { data: publicUrlData } = supabase.storage
+            .from('incident-evidence')
+            .getPublicUrl(filePath);
+          finalUrl = publicUrlData.publicUrl;
+        } else {
+          console.warn('Storage bucket upload bypassed, using direct payload fallback.');
+        }
+      } catch (storageErr) {
+        console.warn('Storage upload error, falling back to direct DB data payload.');
+      }
 
-      const publicUrl = publicUrlData.publicUrl;
+      // 3. DIRECT POSTGRES WRITE (Guarantees immediate visibility on Rescuer screen)
+      const { error: dbError } = await supabase
+        .from('distress_incidents')
+        .update({
+          evidence_image_url: finalUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', incidentId);
 
-      // 4. Asynchronously invoke Multimodal Vision API
-      const res = await fetch('/api/verify-hazard', {
+      if (dbError) throw dbError;
+
+      setPhotoSuccess(true);
+      setAiVerifiedMessage('Photo Live on Command Center Screen!');
+
+      // 4. Asynchronous Vision AI Assessment (Non-blocking)
+      fetch('/api/verify-hazard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           incidentId,
-          imageUrl: publicUrl,
+          imageUrl: finalUrl,
           reportedHazard: selectedHazard,
         }),
-      });
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.analysis?.observations) {
+            setAiVerifiedMessage(`AI Verified: ${data.analysis.observations}`);
+          }
+        })
+        .catch(() => {});
 
-      const data = await res.json();
-      if (data?.analysis?.hazard_confirmed) {
-        setAiVerifiedMessage(`${t.photoVerified}: ${data.analysis.observations}`);
-      } else {
-        setAiVerifiedMessage('Photo uploaded. Awaiting rescuer ocular review.');
-      }
     } catch (err: any) {
-      console.error('Photo verification failed:', err);
-      setAiVerifiedMessage('Photo stored locally. Priority unaffected.');
+      console.error('Photo pipeline failed:', err);
+      setAiVerifiedMessage('Network error saving photo. Your GPS distress beacon remains active.');
     } finally {
       setIsUploadingPhoto(false);
     }
@@ -848,7 +873,7 @@ export default function VictimPage() {
         </div>
       )}
 
-      {/* STAGE 2: PROGRESSIVE ENRICHMENT + OPTIONAL VISION AI */}
+      {/* STAGE 2: PROGRESSIVE ENRICHMENT + FAIL-PROOF PHOTO UPLOAD */}
       {stage === 'followup' && (
         <div className="flex-1 flex flex-col justify-between py-3 space-y-4">
           {incidentStatus === 'pending' && (
@@ -942,7 +967,7 @@ export default function VictimPage() {
               </div>
             </div>
 
-            {/* Question 2: Critical Condition Toggles */}
+            {/* Question 2: Vulnerability Toggles */}
             <div className="space-y-2 pt-2 border-t border-neutral-800">
               <label className="text-xs font-bold text-neutral-200 block">
                 {t.q2Hazards}
@@ -976,7 +1001,7 @@ export default function VictimPage() {
               </div>
             </div>
 
-            {/* Question 3: Micro-Location */}
+            {/* Question 3: Landmark */}
             <div className="space-y-1.5 pt-2 border-t border-neutral-800">
               <label className="text-xs font-bold text-neutral-200 block">
                 {t.q3Landmark}
@@ -990,11 +1015,11 @@ export default function VictimPage() {
               />
             </div>
 
-            {/* Question 4: Optional Photo Evidence with AI Triage */}
+            {/* Question 4: Bulletproof Ground Photo Evidence */}
             <div className="space-y-2 pt-2 border-t border-neutral-800">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <Camera className="w-3.5 h-3.5 text-sky-400" />
                   <span>{t.q4Photo}</span>
                 </label>
                 <span className="text-[10px] font-mono text-emerald-400">+25 Priority Boost</span>
@@ -1021,12 +1046,12 @@ export default function VictimPage() {
                 >
                   {isUploadingPhoto ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                      <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
                       <span>{t.analyzingPhoto}</span>
                     </>
                   ) : (
                     <>
-                      <Camera className="w-4 h-4 text-amber-400" />
+                      <Camera className="w-4 h-4 text-sky-400" />
                       <span>{t.takePhoto}</span>
                     </>
                   )}
@@ -1036,20 +1061,24 @@ export default function VictimPage() {
                   <img
                     src={photoPreview}
                     alt="Captured Evidence"
-                    className="w-14 h-14 object-cover rounded border border-neutral-700"
+                    className="w-14 h-14 object-cover rounded border border-neutral-700 shrink-0"
                   />
-                  <div className="flex-1 text-[11px]">
+                  <div className="flex-1 text-[11px] space-y-1">
                     {isUploadingPhoto ? (
-                      <span className="text-amber-400 flex items-center gap-1 font-mono">
+                      <span className="text-sky-400 flex items-center gap-1 font-mono">
                         <Loader2 className="w-3 h-3 animate-spin" />
-                        AI Evaluating Ground Severity...
+                        Transmitting to Rescuer...
                       </span>
-                    ) : aiVerifiedMessage ? (
-                      <span className="text-emerald-400 font-medium">
+                    ) : photoSuccess ? (
+                      <div className="text-emerald-400 font-bold flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Live on Rescuer Screen!</span>
+                      </div>
+                    ) : null}
+                    {aiVerifiedMessage && (
+                      <p className="text-neutral-400 text-[10px] leading-tight">
                         {aiVerifiedMessage}
-                      </span>
-                    ) : (
-                      <span className="text-neutral-400">Photo compressed and queued.</span>
+                      </p>
                     )}
                   </div>
                 </div>

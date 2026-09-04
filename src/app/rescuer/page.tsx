@@ -13,16 +13,18 @@ import {
   Navigation2, 
   Volume2, 
   VolumeX, 
-  ExternalLink,
-  Filter,
-  Building2,
-  PhoneCall,
-  Download,
-  Megaphone,
-  Archive,
-  AlertCircle,
-  X,
-  Tent
+  ExternalLink, 
+  Filter, 
+  Building2, 
+  PhoneCall, 
+  Download, 
+  Megaphone, 
+  Archive, 
+  AlertCircle, 
+  X, 
+  Tent,
+  Truck,
+  AlertTriangle
 } from 'lucide-react';
 
 const RescuerMap = dynamic(() => import('@/components/RescuerMap'), {
@@ -102,7 +104,7 @@ export default function RescuerDashboardPage() {
       osc.start();
       osc.stop(ctx.currentTime + 0.35);
     } catch {
-      // Autoplay fallback
+      // Audio autoplay fallback
     }
   };
 
@@ -255,6 +257,13 @@ export default function RescuerDashboardPage() {
     return inc.hazard_type.toLowerCase() === selectedFilter.toLowerCase();
   });
 
+  // Calculate Realtime Situational Telemetry Aggregates
+  const totalSouls = incidents.reduce((acc, curr) => acc + (curr.headcount || 1), 0);
+  const criticalCount = incidents.filter((i) => i.priority_score >= 75).length;
+  const corroboratedCount = incidents.filter((i) => i.corroboration_count > 1).length;
+  const dispatchedCount = incidents.filter((i) => i.status === 'dispatched').length;
+  const totalShelters = EMERGENCY_BASES.filter((b) => b.type === 'SHELTER').length;
+
   const nearestBases = selectedIncident
     ? EMERGENCY_BASES.filter((b) => b.type !== 'SHELTER')
         .map((b) => ({
@@ -286,7 +295,7 @@ export default function RescuerDashboardPage() {
 
   return (
     <div className="h-screen w-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden font-sans">
-      {/* Tactical Ribbon */}
+      {/* Primary Command Header */}
       <header className="h-14 border-b border-neutral-800 px-4 flex items-center justify-between bg-neutral-900 shrink-0">
         <div className="flex items-center gap-3">
           <ShieldAlert className="w-6 h-6 text-red-500" />
@@ -311,7 +320,7 @@ export default function RescuerDashboardPage() {
           <button
             type="button"
             onClick={exportToCSV}
-            className="flex items-center gap-1.5 px-2 py-1 rounded border border-neutral-700 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-neutral-700 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 transition-colors"
           >
             <Download className="w-3.5 h-3.5 text-blue-400" />
             <span>EXPORT CSV</span>
@@ -348,6 +357,52 @@ export default function RescuerDashboardPage() {
           </div>
         </div>
       </header>
+
+      {/* Situational Aggregates Telemetry Ribbon */}
+      <section className="h-10 bg-neutral-900/90 border-b border-neutral-800/80 px-4 flex items-center justify-between text-xs font-mono shrink-0 select-none overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-6">
+          {/* Total Stranded Souls */}
+          <div className="flex items-center gap-2">
+            <Users className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-neutral-400 uppercase text-[10px]">Stranded Souls:</span>
+            <span className="font-bold text-amber-300 text-sm">{totalSouls}</span>
+          </div>
+
+          {/* Critical Clusters (>= 75) */}
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-red-500 animate-pulse" />
+            <span className="text-neutral-400 uppercase text-[10px]">Critical (≥75):</span>
+            <span className="font-bold text-red-400 text-sm">{criticalCount}</span>
+          </div>
+
+          {/* Corroborated Hotspots */}
+          <div className="flex items-center gap-2">
+            <Radio className="w-3.5 h-3.5 text-sky-400" />
+            <span className="text-neutral-400 uppercase text-[10px]">Corroborated:</span>
+            <span className="font-bold text-sky-300 text-sm">{corroboratedCount}</span>
+          </div>
+
+          {/* Units Dispatched */}
+          <div className="flex items-center gap-2">
+            <Truck className="w-3.5 h-3.5 text-blue-400" />
+            <span className="text-neutral-400 uppercase text-[10px]">Dispatched:</span>
+            <span className="font-bold text-blue-300 text-sm">{dispatchedCount}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-5">
+          {/* Active Shelters */}
+          <div className="flex items-center gap-2">
+            <Tent className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="text-neutral-400 uppercase text-[10px]">Safe Havens:</span>
+            <span className="font-bold text-emerald-300 text-sm">{totalShelters}</span>
+          </div>
+
+          <div className="text-neutral-500 text-[11px]">
+            Active Clusters: <strong className="text-neutral-200">{incidents.length}</strong>
+          </div>
+        </div>
+      </section>
 
       {/* Main Operating Grid */}
       <div className="flex-1 flex overflow-hidden">

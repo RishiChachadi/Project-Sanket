@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabaseClient';
 import { Incident } from '@/components/RescuerMap';
-import { EMERGENCY_BASES, EmergencyBase, calculateDistanceKm } from '@/data/emergencyBases';
+import { EMERGENCY_BASES, calculateDistanceKm } from '@/data/emergencyBases';
 import { 
   ShieldAlert, 
   Users, 
@@ -16,7 +16,12 @@ import {
   ExternalLink,
   Filter,
   Building2,
-  PhoneCall
+  PhoneCall,
+  Download,
+  Megaphone,
+  Archive,
+  AlertCircle,
+  X
 } from 'lucide-react';
 
 const RescuerMap = dynamic(() => import('@/components/RescuerMap'), {
@@ -32,9 +37,15 @@ export default function RescuerDashboardPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [selectedFilter, setSelectedFilter] = useState<string>('ALL');
+  const [viewTab, setViewTab] = useState<'ACTIVE' | 'RESOLVED'>('ACTIVE');
   const [isLive, setIsLive] = useState(false);
   const [audioAlertsEnabled, setAudioAlertsEnabled] = useState(true);
   const [showBases, setShowBases] = useState(true);
+
+  // Broadcast Modal State
+  const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [broadcastSent, setBroadcastSent] = useState(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -69,23 +80,33 @@ export default function RescuerDashboardPage() {
   };
 
   const fetchIncidents = async () => {
-    const { data, error } = await supabase
+    const query = supabase
       .from('distress_incidents')
       .select('*')
-      .neq('status', 'resolved')
       .order('priority_score', { ascending: false });
 
+    if (viewTab === 'ACTIVE') {
+      query.neq('status', 'resolved');
+    } else {
+      query.eq('status', 'resolved');
+    }
+
+    const { data, error } = await query;
     if (!error && data) {
       setIncidents(data as Incident[]);
-      if (data.length > 0 && !selectedIncident) {
+      if (data.length > 0) {
         setSelectedIncident(data[0] as Incident);
+      } else {
+        setSelectedIncident(null);
       }
     }
   };
 
   useEffect(() => {
     fetchIncidents();
+  }, [viewTab]);
 
+  useEffect(() => {
     const channel = supabase
       .channel('realtime-rescuer-incidents')
       .on(
@@ -94,19 +115,27 @@ export default function RescuerDashboardPage() {
         (payload) => {
           if (payload.eventType === 'INSERT') {
             const newRecord = payload.new as Incident;
-            setIncidents((prev) => [newRecord, ...prev]);
+            if (viewTab === 'ACTIVE') {
+              setIncidents((prev) => [newRecord, ...prev]);
+            }
             playTacticalChime();
           } else if (payload.eventType === 'UPDATE') {
             const updated = payload.new as Incident;
-            if (updated.status === 'resolved') {
-              setIncidents((prev) => prev.filter((item) => item.id !== updated.id));
-              setSelectedIncident((prev) => (prev?.id === updated.id ? null : prev));
-            } else {
-              setIncidents((prev) =>
-                prev.map((item) => (item.id === updated.id ? updated : item))
-              );
-              setSelectedIncident((prev) => (prev?.id === updated.id ? updated : prev));
-              playTacticalChime();
+            if (viewTab === 'ACTIVE') {
+              if (updated.status === 'resolved') {
+                setIncidents((prev) => prev.filter((item) => item.id !== updated.id));
+                setSelectedIncident((prev) => (prev?.id === updated.id ? null : prev));
+              } else {
+                setIncidents((prev) =>
+                  prev.map((item) => (item.id === updated.id ? updated : item))
+                );
+                setSelectedIncident((prev) => (prev?.id === updated.id ? updated : prev));
+                playTacticalChime();
+              }
+            } else if (viewTab === 'RESOLVED') {
+              if (updated.status === 'resolved') {
+                setIncidents((prev) => [updated, ...prev]);
+              }
             }
           }
         }
@@ -118,7 +147,7 @@ export default function RescuerDashboardPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [audioAlertsEnabled]);
+  }, [viewTab, audioAlertsEnabled]);
 
   const updateIncidentStatus = async (id: string, nextStatus: string) => {
     await supabase
@@ -127,12 +156,80 @@ export default function RescuerDashboardPage() {
       .eq('id', id);
   };
 
+  // BROADCAST TRANSMITTER
+  const handleTransmitBroadcast = async () => {
+    if (!broadcastMessage.trim()) return;
+
+    const channel = supabase.channel('disaster-broadcasts');
+    await channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await channel.send({
+          type: 'broadcast',
+          event: 'evacuation_alert',
+          payload: {
+            message: broadcastMessage.trim(),
+            severity: 'CRITICAL',
+            timestamp: new Date().toISOString(),
+          },
+        });
+        setBroadcastSent(true);
+        setTimeout(() => {
+          setBroadcastSent(false);
+          setIsBroadcastOpen(false);
+          setBroadcastMessage('');
+        }, 1500);
+      }
+    });
+  };
+
+  // CSV EXPORT ENGINE
+  const exportToCSV = () => {
+    if (incidents.length === 0) return;
+
+    const headers = [
+      'Cluster ID',
+      'Status',
+      'Hazard Type',
+      'Priority Score',
+      'Headcount',
+      'Corroboration Count',
+      'Latitude',
+      'Longitude',
+      'Source Channel',
+      'Field Notes',
+      'Created At'
+    ];
+
+    const rows = incidents.map((inc) => [
+      `"${inc.id}"`,
+      `"${inc.status}"`,
+      `"${inc.hazard_type}"`,
+      inc.priority_score,
+      inc.headcount,
+      inc.corroboration_count,
+      inc.latitude,
+      inc.longitude,
+      `"${inc.source_channel}"`,
+      `"${(inc.caller_notes || []).join(' | ').replace(/"/g, '""')}"`,
+      `"${inc.created_at}"`
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `sanket_cad_report_${viewTab.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const filteredIncidents = incidents.filter((inc) => {
     if (selectedFilter === 'ALL') return true;
     return inc.hazard_type.toLowerCase() === selectedFilter.toLowerCase();
   });
 
-  // Calculate the 3 nearest emergency response bases to the currently selected incident
   const nearestBases = selectedIncident
     ? EMERGENCY_BASES.map((b) => ({
         ...b,
@@ -149,7 +246,7 @@ export default function RescuerDashboardPage() {
 
   return (
     <div className="h-screen w-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden font-sans">
-      {/* Tactical Ribbon */}
+      {/* Tactical Header */}
       <header className="h-14 border-b border-neutral-800 px-4 flex items-center justify-between bg-neutral-900 shrink-0">
         <div className="flex items-center gap-3">
           <ShieldAlert className="w-6 h-6 text-red-500" />
@@ -157,11 +254,32 @@ export default function RescuerDashboardPage() {
             <h1 className="text-sm font-black tracking-wider uppercase">
               Incident Command System (ICS) — Common Operating Picture
             </h1>
-            <p className="text-[11px] text-neutral-400">Sector Command & Resource Dispatch</p>
+            <p className="text-[11px] text-neutral-400">Sector Command & Spatial Dispatch</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 text-xs font-mono">
+        <div className="flex items-center gap-2.5 text-xs font-mono">
+          {/* Emergency Evacuation Broadcast Trigger */}
+          <button
+            type="button"
+            onClick={() => setIsBroadcastOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-red-600 hover:bg-red-500 text-white font-bold transition-colors shadow-[0_0_12px_rgba(239,68,68,0.4)]"
+          >
+            <Megaphone className="w-3.5 h-3.5" />
+            <span>BROADCAST ALERT</span>
+          </button>
+
+          {/* CSV Export Button */}
+          <button
+            type="button"
+            onClick={exportToCSV}
+            className="flex items-center gap-1.5 px-2 py-1 rounded border border-neutral-700 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 transition-colors"
+            title="Download incident data as CSV"
+          >
+            <Download className="w-3.5 h-3.5 text-blue-400" />
+            <span>EXPORT CSV</span>
+          </button>
+
           {/* Base Layer Toggle */}
           <button
             type="button"
@@ -173,10 +291,10 @@ export default function RescuerDashboardPage() {
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
-            <span>{showBases ? 'BASES VISIBLE' : 'BASES HIDDEN'}</span>
+            <span>{showBases ? 'BASES ON' : 'BASES OFF'}</span>
           </button>
 
-          {/* Audio Alerts */}
+          {/* Audio Chime Toggle */}
           <button
             type="button"
             onClick={() => setAudioAlertsEnabled(!audioAlertsEnabled)}
@@ -193,45 +311,65 @@ export default function RescuerDashboardPage() {
             <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
             <span>{isLive ? 'SOCKET LIVE' : 'CONNECTING'}</span>
           </div>
-
-          <div className="text-neutral-400">
-            Active: <strong className="text-neutral-100">{incidents.length}</strong>
-          </div>
         </div>
       </header>
 
+      {/* Main Command Grid */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Column: Prioritized Triage Queue */}
+        {/* Left Column: Triage Queue & Tab Switcher */}
         <div className="w-88 border-r border-neutral-800 flex flex-col bg-neutral-900/40 shrink-0">
-          <div className="p-3 border-b border-neutral-800 space-y-2">
-            <div className="text-xs font-semibold text-neutral-400 flex items-center justify-between">
-              <span>PRIORITIZED QUEUE</span>
-              <Layers className="w-4 h-4" />
-            </div>
-
-            <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[11px] font-mono no-scrollbar">
-              {['ALL', 'Flood', 'Fire', 'Medical', 'Trapped'].map((filter) => (
-                <button
-                  key={filter}
-                  type="button"
-                  onClick={() => setSelectedFilter(filter)}
-                  className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap ${
-                    selectedFilter === filter
-                      ? 'bg-neutral-100 text-neutral-950 font-bold'
-                      : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'
-                  }`}
-                >
-                  {filter}
-                </button>
-              ))}
-            </div>
+          {/* Active vs Resolved Switcher */}
+          <div className="grid grid-cols-2 border-b border-neutral-800 text-xs font-mono font-bold">
+            <button
+              type="button"
+              onClick={() => setViewTab('ACTIVE')}
+              className={`py-2.5 flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                viewTab === 'ACTIVE'
+                  ? 'border-red-500 text-white bg-neutral-850'
+                  : 'border-transparent text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 text-red-500" />
+              <span>ACTIVE QUEUE</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewTab('RESOLVED')}
+              className={`py-2.5 flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                viewTab === 'RESOLVED'
+                  ? 'border-emerald-500 text-white bg-neutral-850'
+                  : 'border-transparent text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              <Archive className="w-3.5 h-3.5 text-emerald-400" />
+              <span>RESOLVED LOG</span>
+            </button>
           </div>
 
+          {/* Filter Chips */}
+          <div className="p-2.5 border-b border-neutral-800 flex items-center gap-1 overflow-x-auto text-[11px] font-mono no-scrollbar">
+            {['ALL', 'Flood', 'Fire', 'Medical', 'Trapped'].map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                onClick={() => setSelectedFilter(filter)}
+                className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap ${
+                  selectedFilter === filter
+                    ? 'bg-neutral-100 text-neutral-950 font-bold'
+                    : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'
+                }`}
+              >
+                {filter}
+              </button>
+            ))}
+          </div>
+
+          {/* Queue List */}
           <div className="flex-1 overflow-y-auto divide-y divide-neutral-800/60">
             {filteredIncidents.length === 0 ? (
               <div className="p-6 text-center text-xs text-neutral-500 flex flex-col items-center gap-2">
                 <Filter className="w-4 h-4 text-neutral-600" />
-                <span>No incidents matching filter.</span>
+                <span>No incidents matching active view.</span>
               </div>
             ) : (
               filteredIncidents.map((item) => {
@@ -287,7 +425,7 @@ export default function RescuerDashboardPage() {
           />
         </div>
 
-        {/* Right Column: Dispatch Panel with Nearest Response Bases */}
+        {/* Right Column: Dispatch & CAD Panel */}
         {selectedIncident && (
           <div className="w-96 border-l border-neutral-800 p-4 flex flex-col justify-between bg-neutral-900/70 shrink-0 overflow-y-auto">
             <div className="space-y-4">
@@ -299,6 +437,8 @@ export default function RescuerDashboardPage() {
                 <span className={`px-2 py-0.5 rounded font-mono text-[10px] uppercase font-bold ${
                   selectedIncident.status === 'dispatched' 
                     ? 'bg-blue-950 text-blue-400 border border-blue-800' 
+                    : selectedIncident.status === 'resolved'
+                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
                     : 'bg-neutral-800 text-neutral-300'
                 }`}>
                   {selectedIncident.status}
@@ -324,7 +464,7 @@ export default function RescuerDashboardPage() {
                 </div>
               </div>
 
-              {/* NEAREST RESPONSE BASES (PROXIMITY ENGINE) */}
+              {/* NEAREST BASES */}
               <div className="space-y-2 pt-1 border-t border-neutral-800">
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block flex items-center justify-between">
                   <span>Closest Emergency Bases</span>
@@ -360,7 +500,7 @@ export default function RescuerDashboardPage() {
                 </div>
               </div>
 
-              {/* Corroborated Field Logs */}
+              {/* Field Logs */}
               <div className="pt-1 border-t border-neutral-800">
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block mb-1">
                   Corroborated Field Logs ({selectedIncident.caller_notes?.length || 0})
@@ -376,25 +516,79 @@ export default function RescuerDashboardPage() {
             </div>
 
             {/* Tactical Actions */}
-            <div className="space-y-2 pt-3 border-t border-neutral-800">
-              <button
-                type="button"
-                onClick={() => updateIncidentStatus(selectedIncident.id, 'dispatched')}
-                className="w-full py-2.5 rounded bg-blue-600 hover:bg-blue-500 font-bold text-xs uppercase tracking-wider transition-colors"
-              >
-                Mark Rescuers Dispatched
-              </button>
-              <button
-                type="button"
-                onClick={() => updateIncidentStatus(selectedIncident.id, 'resolved')}
-                className="w-full py-2.5 rounded bg-emerald-700 hover:bg-emerald-600 font-bold text-xs uppercase tracking-wider transition-colors"
-              >
-                Mark Incident Resolved
-              </button>
-            </div>
+            {viewTab === 'ACTIVE' && (
+              <div className="space-y-2 pt-3 border-t border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => updateIncidentStatus(selectedIncident.id, 'dispatched')}
+                  className="w-full py-2.5 rounded bg-blue-600 hover:bg-blue-500 font-bold text-xs uppercase tracking-wider transition-colors"
+                >
+                  Mark Rescuers Dispatched
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateIncidentStatus(selectedIncident.id, 'resolved')}
+                  className="w-full py-2.5 rounded bg-emerald-700 hover:bg-emerald-600 font-bold text-xs uppercase tracking-wider transition-colors"
+                >
+                  Mark Incident Resolved
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {/* EVACUATION BROADCAST MODAL */}
+      {isBroadcastOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2 text-red-500">
+                <AlertCircle className="w-5 h-5" />
+                <h2 className="text-sm font-black uppercase tracking-wider text-white">
+                  Issue Public Evacuation Advisory
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBroadcastOpen(false)}
+                className="text-neutral-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-neutral-400 leading-relaxed">
+              This message will be pushed instantly via WebSocket to all citizens currently viewing the mobile SOS PWA, accompanied by an urgent haptic pattern.
+            </p>
+
+            <textarea
+              rows={3}
+              value={broadcastMessage}
+              onChange={(e) => setBroadcastMessage(e.target.value)}
+              placeholder="e.g. FLASH FLOOD WARNING: Breached lake bund in Sector 4. Immediately move to 2nd floor or higher ground. Avoid basement shelters."
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-3 text-xs text-white placeholder:text-neutral-600 focus:outline-none focus:border-red-500"
+            />
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsBroadcastOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-neutral-800 text-xs font-bold text-neutral-400 hover:bg-neutral-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleTransmitBroadcast}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-[0_0_15px_rgba(239,68,68,0.4)]"
+              >
+                {broadcastSent ? 'ADVISORY TRANSMITTED!' : 'TRANSMIT BROADCAST'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

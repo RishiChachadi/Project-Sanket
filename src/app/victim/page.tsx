@@ -18,7 +18,10 @@ import {
   Truck,
   Clock,
   RotateCcw,
-  Timer
+  Timer,
+  Camera,
+  Sparkles,
+  Image as ImageIcon
 } from 'lucide-react';
 
 interface BroadcastAlert {
@@ -34,7 +37,6 @@ const TRANSLATIONS = {
   EN: {
     appTitle: 'Project Sanket',
     gpsLocking: 'Locking GPS...',
-    offlineBadge: 'OFFLINE',
     stage1Heading: 'Emergency Distress',
     stage1Sub: 'Tap once to lock coordinates and alert rescue commanders.',
     selectDanger: 'Select Immediate Danger',
@@ -58,6 +60,11 @@ const TRANSLATIONS = {
     infantElderly: 'Infant / Elderly / Oxygen dependent',
     q3Landmark: '3. Landmark / Exact Spot (Optional)',
     landmarkPlaceholder: 'e.g. 2nd floor balcony, blue gate',
+    q4Photo: '4. Ground Photo Evidence (Optional)',
+    photoSub: 'Upload a compressed photo to boost rescue priority score with AI validation.',
+    takePhoto: 'Take Photo Evidence',
+    analyzingPhoto: 'Compressing & Running AI Triage...',
+    photoVerified: 'Photo Verified by AI! Priority Boosted (+25)',
     sendUpdates: 'Transmit Field Updates',
     updatesSynced: 'Field Notes Synced! Entering Battery Saver...',
     enableBatterySaver: 'Enable Battery Preservation Now',
@@ -74,7 +81,6 @@ const TRANSLATIONS = {
   KN: {
     appTitle: 'ಸಂಕೇತ್ ರಕ್ಷಣೆ',
     gpsLocking: 'ಜಿಪಿಎಸ್ ಹುಡುಕಲಾಗುತ್ತಿದೆ...',
-    offlineBadge: 'ಆಫ್‌ಲೈನ್',
     stage1Heading: 'ತುರ್ತು ಅಪಾಯ ಸಂಕೇತ',
     stage1Sub: 'ರಕ್ಷಣಾ ಕಮಾಂಡರ್‌ಗಳಿಗೆ ತಕ್ಷಣ ಮಾಹಿತಿ ರವಾನಿಸಲು ಒಮ್ಮೆ ಒತ್ತಿ.',
     selectDanger: 'ತಕ್ಷಣದ ಅಪಾಯವನ್ನು ಆಯ್ಕೆಮಾಡಿ',
@@ -98,6 +104,11 @@ const TRANSLATIONS = {
     infantElderly: 'ಶಿಶು / ಹಿರಿಯರು / ಆಮ್ಲಜನಕದ ಅಗತ್ಯವಿದೆ',
     q3Landmark: '3. ಹತ್ತಿರದ ಗುರುತು ಅಥವಾ ಮಹಡಿ (ಐಚ್ಛಿಕ)',
     landmarkPlaceholder: 'ಉದಾ: 2ನೇ ಮಹಡಿ ಬಾಲ್ಕನಿ, ನೀಲಿ ಗೇಟ್',
+    q4Photo: '4. ಸ್ಥಳದ ಫೋಟೋ ಸಾಕ್ಷಿ (ಐಚ್ಛಿಕ)',
+    photoSub: 'AI ದೃಢೀಕರಣದ ಮೂಲಕ ಆದ್ಯತೆಯನ್ನು ಹೆಚ್ಚಿಸಲು ಫೋಟೋ ಲಗತ್ತಿಸಿ.',
+    takePhoto: 'ಫೋಟೋ ತೆಗೆಯಿರಿ',
+    analyzingPhoto: 'ವಿಶ್ಲೇಷಿಸಲಾಗುತ್ತಿದೆ...',
+    photoVerified: 'AI ಪರಿಶೀಲನೆ ಪೂರ್ಣಗೊಂಡಿದೆ! ಆದ್ಯತೆ ಹೆಚ್ಚಿಸಲಾಗಿದೆ',
     sendUpdates: 'ಮಾಹಿತಿಯನ್ನು ರವಾನಿಸಿ',
     updatesSynced: 'ಮಾಹಿತಿ ತಲುಪಿದೆ! ಬ್ಯಾಟರಿ ಸೇವರ್ ಆನ್ ಆಗುತ್ತಿದೆ...',
     enableBatterySaver: 'ಈಗಲೇ ಬ್ಯಾಟರಿ ಉಳಿತಾಯ ಮೋಡ್ ಆನ್ ಮಾಡಿ',
@@ -114,7 +125,6 @@ const TRANSLATIONS = {
   HI: {
     appTitle: 'प्रोजेक्ट संकेत',
     gpsLocking: 'जीपीएस लॉक हो रहा है...',
-    offlineBadge: 'ऑफलाइन',
     stage1Heading: 'आपातकालीन संकट (SOS)',
     stage1Sub: 'बचाव दल को अपना स्थान भेजने के लिए एक बार टैप करें।',
     selectDanger: 'तत्काल संकट चुनें',
@@ -138,6 +148,11 @@ const TRANSLATIONS = {
     infantElderly: 'शिशु / बुजुर्ग / ऑक्सीजन की आवश्यकता',
     q3Landmark: '3. पहचान चिन्ह या सटीक मंजिल (वैकल्पिक)',
     landmarkPlaceholder: 'उदा. दूसरी मंजिल की बालकनी, नीला गेट',
+    q4Photo: '4. घटनास्थल का फोटो (वैकल्पिक)',
+    photoSub: 'AI सत्यापन द्वारा बचाव प्राथमिकता बढ़ाने के लिए फोटो जोड़ें।',
+    takePhoto: 'फोटो खींचें',
+    analyzingPhoto: 'AI विश्लेषण जारी है...',
+    photoVerified: 'AI द्वारा सत्यापित! प्राथमिकता बढ़ाई गई',
     sendUpdates: 'अतिरिक्त विवरण भेजें',
     updatesSynced: 'जानकारी भेजी गई! बैटरी सेवर सक्रिय...',
     enableBatterySaver: 'बैटरी सेवर चालू करें',
@@ -153,7 +168,6 @@ const TRANSLATIONS = {
   },
 };
 
-// Hazard configuration with emojis and chromatic color tokens
 const HAZARD_CONFIG = [
   {
     id: 'Flood',
@@ -188,6 +202,48 @@ const HAZARD_CONFIG = [
     badgeText: 'text-emerald-200',
   },
 ];
+
+// In-Browser Micro-Compressor (Canvas -> WebP 800px ~35KB)
+async function compressImageToBlob(file: File): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error('Canvas blob generation failed'));
+          },
+          'image/webp',
+          0.6
+        );
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+}
 
 export default function VictimPage() {
   const [lang, setLang] = useState<Language>('EN');
@@ -225,10 +281,15 @@ export default function VictimPage() {
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
   const [enrichmentSaved, setEnrichmentSaved] = useState<boolean>(false);
 
+  // Evidence Photo & AI State
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [aiVerifiedMessage, setAiVerifiedMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   // Battery Saver Mode
   const [batterySaver, setBatterySaver] = useState<boolean>(false);
 
-  // Active Hazard Token
   const activeHazardConfig = HAZARD_CONFIG.find((h) => h.id === selectedHazard) || HAZARD_CONFIG[0];
 
   const startGpsWatcher = useCallback(() => {
@@ -265,6 +326,8 @@ export default function VictimPage() {
     setHasMedical(false);
     setIsTrapped(false);
     setLandmarkNotes('');
+    setPhotoPreview(null);
+    setAiVerifiedMessage(null);
     setBatterySaver(false);
     setStatusMessage(null);
     setEnrichmentSaved(false);
@@ -405,6 +468,62 @@ export default function VictimPage() {
       setStatusMessage('Data link unavailable. Transmit via emergency SMS fallback below.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Micro-Compression & Background AI Upload
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !incidentId) return;
+
+    setIsUploadingPhoto(true);
+    setAiVerifiedMessage(null);
+
+    try {
+      // 1. Client-Side Canvas WebP Compression
+      const compressedBlob = await compressImageToBlob(file);
+      setPhotoPreview(URL.createObjectURL(compressedBlob));
+
+      // 2. Direct upload to Supabase Storage bucket
+      const filePath = `${incidentId}/${Date.now()}.webp`;
+      const { error: uploadError } = await supabase.storage
+        .from('incident-evidence')
+        .upload(filePath, compressedBlob, {
+          contentType: 'image/webp',
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      // 3. Obtain public URL
+      const { data: publicUrlData } = supabase.storage
+        .from('incident-evidence')
+        .getPublicUrl(filePath);
+
+      const publicUrl = publicUrlData.publicUrl;
+
+      // 4. Asynchronously invoke Multimodal Vision API
+      const res = await fetch('/api/verify-hazard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          incidentId,
+          imageUrl: publicUrl,
+          reportedHazard: selectedHazard,
+        }),
+      });
+
+      const data = await res.json();
+      if (data?.analysis?.hazard_confirmed) {
+        setAiVerifiedMessage(`${t.photoVerified}: ${data.analysis.observations}`);
+      } else {
+        setAiVerifiedMessage('Photo uploaded. Awaiting rescuer ocular review.');
+      }
+    } catch (err: any) {
+      console.error('Photo verification failed:', err);
+      setAiVerifiedMessage('Photo stored locally. Priority unaffected.');
+    } finally {
+      setIsUploadingPhoto(false);
     }
   };
 
@@ -661,7 +780,6 @@ export default function VictimPage() {
             </p>
           </div>
 
-          {/* Color-Coded Hazard Selectors with Emojis */}
           <div className="space-y-2">
             <label className="text-[10px] font-mono tracking-wider uppercase text-neutral-400">
               {t.selectDanger}
@@ -688,7 +806,6 @@ export default function VictimPage() {
             </div>
           </div>
 
-          {/* Dynamic Chromatic SOS Button (Shifts Blue for Flood, Red for Fire, etc.) */}
           <div className="pt-2">
             <button
               type="button"
@@ -731,7 +848,7 @@ export default function VictimPage() {
         </div>
       )}
 
-      {/* STAGE 2: PROGRESSIVE TRIAGE ENRICHMENT */}
+      {/* STAGE 2: PROGRESSIVE ENRICHMENT + OPTIONAL VISION AI */}
       {stage === 'followup' && (
         <div className="flex-1 flex flex-col justify-between py-3 space-y-4">
           {incidentStatus === 'pending' && (
@@ -801,7 +918,7 @@ export default function VictimPage() {
           )}
 
           <div className="space-y-4 bg-neutral-900/60 p-4 rounded-xl border border-neutral-800">
-            {/* Question 1 */}
+            {/* Question 1: Headcount */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-neutral-200 flex items-center justify-between">
                 <span>{t.q1Headcount}</span>
@@ -825,7 +942,7 @@ export default function VictimPage() {
               </div>
             </div>
 
-            {/* Question 2 */}
+            {/* Question 2: Critical Condition Toggles */}
             <div className="space-y-2 pt-2 border-t border-neutral-800">
               <label className="text-xs font-bold text-neutral-200 block">
                 {t.q2Hazards}
@@ -859,7 +976,7 @@ export default function VictimPage() {
               </div>
             </div>
 
-            {/* Question 3 */}
+            {/* Question 3: Micro-Location */}
             <div className="space-y-1.5 pt-2 border-t border-neutral-800">
               <label className="text-xs font-bold text-neutral-200 block">
                 {t.q3Landmark}
@@ -871,6 +988,72 @@ export default function VictimPage() {
                 onChange={(e) => setLandmarkNotes(e.target.value)}
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-100 placeholder:text-neutral-600 focus:outline-none focus:border-red-500"
               />
+            </div>
+
+            {/* Question 4: Optional Photo Evidence with AI Triage */}
+            <div className="space-y-2 pt-2 border-t border-neutral-800">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{t.q4Photo}</span>
+                </label>
+                <span className="text-[10px] font-mono text-emerald-400">+25 Priority Boost</span>
+              </div>
+              <p className="text-[11px] text-neutral-400 leading-snug">
+                {t.photoSub}
+              </p>
+
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                ref={fileInputRef}
+                onChange={handlePhotoCapture}
+                className="hidden"
+              />
+
+              {!photoPreview ? (
+                <button
+                  type="button"
+                  disabled={isUploadingPhoto}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-2.5 px-3 rounded-lg border border-dashed border-neutral-700 bg-neutral-950/60 hover:bg-neutral-900 text-neutral-300 text-xs font-bold flex items-center justify-center gap-2 transition-colors"
+                >
+                  {isUploadingPhoto ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                      <span>{t.analyzingPhoto}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-4 h-4 text-amber-400" />
+                      <span>{t.takePhoto}</span>
+                    </>
+                  )}
+                </button>
+              ) : (
+                <div className="flex items-center gap-3 p-2 bg-neutral-950 rounded-lg border border-neutral-800">
+                  <img
+                    src={photoPreview}
+                    alt="Captured Evidence"
+                    className="w-14 h-14 object-cover rounded border border-neutral-700"
+                  />
+                  <div className="flex-1 text-[11px]">
+                    {isUploadingPhoto ? (
+                      <span className="text-amber-400 flex items-center gap-1 font-mono">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        AI Evaluating Ground Severity...
+                      </span>
+                    ) : aiVerifiedMessage ? (
+                      <span className="text-emerald-400 font-medium">
+                        {aiVerifiedMessage}
+                      </span>
+                    ) : (
+                      <span className="text-neutral-400">Photo compressed and queued.</span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

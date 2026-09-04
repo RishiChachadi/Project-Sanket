@@ -24,7 +24,9 @@ import {
   X, 
   Tent,
   Truck,
-  AlertTriangle
+  AlertTriangle,
+  Sparkles,
+  Eye
 } from 'lucide-react';
 
 const RescuerMap = dynamic(() => import('@/components/RescuerMap'), {
@@ -38,28 +40,10 @@ const RescuerMap = dynamic(() => import('@/components/RescuerMap'), {
 
 function getHazardBadge(type: string) {
   const t = type.toLowerCase();
-  if (t === 'flood') {
-    return {
-      emoji: '🌊',
-      badgeClass: 'bg-blue-950 text-blue-300 border-blue-800 border',
-    };
-  }
-  if (t === 'fire') {
-    return {
-      emoji: '🔥',
-      badgeClass: 'bg-red-950 text-red-300 border-red-800 border',
-    };
-  }
-  if (t === 'trapped') {
-    return {
-      emoji: '🏚️',
-      badgeClass: 'bg-amber-950 text-amber-300 border-amber-800 border',
-    };
-  }
-  return {
-    emoji: '🚑',
-    badgeClass: 'bg-emerald-950 text-emerald-300 border-emerald-800 border',
-  };
+  if (t === 'flood') return { emoji: '🌊', badgeClass: 'bg-blue-950 text-blue-300 border-blue-800 border' };
+  if (t === 'fire') return { emoji: '🔥', badgeClass: 'bg-red-950 text-red-300 border-red-800 border' };
+  if (t === 'trapped') return { emoji: '🏚️', badgeClass: 'bg-amber-950 text-amber-300 border-amber-800 border' };
+  return { emoji: '🚑', badgeClass: 'bg-emerald-950 text-emerald-300 border-emerald-800 border' };
 }
 
 export default function RescuerDashboardPage() {
@@ -75,6 +59,9 @@ export default function RescuerDashboardPage() {
   const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [broadcastSent, setBroadcastSent] = useState(false);
+
+  // Expanded Image Modal
+  const [expandedImage, setExpandedImage] = useState<string | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -104,7 +91,7 @@ export default function RescuerDashboardPage() {
       osc.start();
       osc.stop(ctx.currentTime + 0.35);
     } catch {
-      // Audio autoplay fallback
+      // Audio autoplay policy fallback
     }
   };
 
@@ -220,9 +207,10 @@ export default function RescuerDashboardPage() {
       'Priority Score',
       'Headcount',
       'Corroboration Count',
+      'AI Verified',
       'Latitude',
       'Longitude',
-      'Source Channel',
+      'Evidence URL',
       'Field Notes',
       'Created At'
     ];
@@ -234,9 +222,10 @@ export default function RescuerDashboardPage() {
       inc.priority_score,
       inc.headcount,
       inc.corroboration_count,
+      (inc as any).ai_verification?.hazard_confirmed ? 'YES' : 'NO',
       inc.latitude,
       inc.longitude,
-      `"${inc.source_channel}"`,
+      `"${(inc as any).evidence_image_url || ''}"`,
       `"${(inc.caller_notes || []).join(' | ').replace(/"/g, '""')}"`,
       `"${inc.created_at}"`
     ]);
@@ -257,7 +246,6 @@ export default function RescuerDashboardPage() {
     return inc.hazard_type.toLowerCase() === selectedFilter.toLowerCase();
   });
 
-  // Calculate Realtime Situational Telemetry Aggregates
   const totalSouls = incidents.reduce((acc, curr) => acc + (curr.headcount || 1), 0);
   const criticalCount = incidents.filter((i) => i.priority_score >= 75).length;
   const corroboratedCount = incidents.filter((i) => i.corroboration_count > 1).length;
@@ -361,28 +349,24 @@ export default function RescuerDashboardPage() {
       {/* Situational Aggregates Telemetry Ribbon */}
       <section className="h-10 bg-neutral-900/90 border-b border-neutral-800/80 px-4 flex items-center justify-between text-xs font-mono shrink-0 select-none overflow-x-auto no-scrollbar">
         <div className="flex items-center gap-6">
-          {/* Total Stranded Souls */}
           <div className="flex items-center gap-2">
             <Users className="w-3.5 h-3.5 text-amber-400" />
             <span className="text-neutral-400 uppercase text-[10px]">Stranded Souls:</span>
             <span className="font-bold text-amber-300 text-sm">{totalSouls}</span>
           </div>
 
-          {/* Critical Clusters (>= 75) */}
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-3.5 h-3.5 text-red-500 animate-pulse" />
             <span className="text-neutral-400 uppercase text-[10px]">Critical (≥75):</span>
             <span className="font-bold text-red-400 text-sm">{criticalCount}</span>
           </div>
 
-          {/* Corroborated Hotspots */}
           <div className="flex items-center gap-2">
             <Radio className="w-3.5 h-3.5 text-sky-400" />
             <span className="text-neutral-400 uppercase text-[10px]">Corroborated:</span>
             <span className="font-bold text-sky-300 text-sm">{corroboratedCount}</span>
           </div>
 
-          {/* Units Dispatched */}
           <div className="flex items-center gap-2">
             <Truck className="w-3.5 h-3.5 text-blue-400" />
             <span className="text-neutral-400 uppercase text-[10px]">Dispatched:</span>
@@ -391,7 +375,6 @@ export default function RescuerDashboardPage() {
         </div>
 
         <div className="flex items-center gap-5">
-          {/* Active Shelters */}
           <div className="flex items-center gap-2">
             <Tent className="w-3.5 h-3.5 text-emerald-400" />
             <span className="text-neutral-400 uppercase text-[10px]">Safe Havens:</span>
@@ -406,7 +389,7 @@ export default function RescuerDashboardPage() {
 
       {/* Main Operating Grid */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Column: Triage Queue & Tab Switcher */}
+        {/* Left Column: Triage Queue */}
         <div className="w-88 border-r border-neutral-800 flex flex-col bg-neutral-900/40 shrink-0">
           <div className="grid grid-cols-2 border-b border-neutral-800 text-xs font-mono font-bold">
             <button
@@ -435,7 +418,6 @@ export default function RescuerDashboardPage() {
             </button>
           </div>
 
-          {/* Filter Chips with Emojis */}
           <div className="p-2.5 border-b border-neutral-800 flex items-center gap-1 overflow-x-auto text-[11px] font-mono no-scrollbar">
             {[
               { id: 'ALL', label: 'ALL' },
@@ -469,6 +451,7 @@ export default function RescuerDashboardPage() {
               filteredIncidents.map((item) => {
                 const isSelected = selectedIncident?.id === item.id;
                 const hazardInfo = getHazardBadge(item.hazard_type);
+                const hasAiVerification = (item as any).ai_verification?.hazard_confirmed;
 
                 return (
                   <div
@@ -481,10 +464,18 @@ export default function RescuerDashboardPage() {
                     }`}
                   >
                     <div className="flex items-center justify-between text-xs mb-1">
-                      <span className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] flex items-center gap-1 ${hazardInfo.badgeClass}`}>
-                        <span>{hazardInfo.emoji}</span>
-                        <span>{item.hazard_type}</span>
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] flex items-center gap-1 ${hazardInfo.badgeClass}`}>
+                          <span>{hazardInfo.emoji}</span>
+                          <span>{item.hazard_type}</span>
+                        </span>
+                        {hasAiVerification && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-950/80 text-amber-300 border border-amber-700 flex items-center gap-1">
+                            <Sparkles className="w-2.5 h-2.5" />
+                            AI VERIFIED
+                          </span>
+                        )}
+                      </div>
                       <span className="font-mono text-neutral-400 text-[11px]">Score: {item.priority_score}</span>
                     </div>
 
@@ -518,7 +509,7 @@ export default function RescuerDashboardPage() {
           />
         </div>
 
-        {/* Right Column: Dispatch Panel with Evacuation CAD Routing */}
+        {/* Right Column: Dispatch Panel */}
         {selectedIncident && (
           <div className="w-96 border-l border-neutral-800 p-4 flex flex-col justify-between bg-neutral-900/70 shrink-0 overflow-y-auto">
             <div className="space-y-4">
@@ -537,6 +528,45 @@ export default function RescuerDashboardPage() {
                   {selectedIncident.status}
                 </span>
               </div>
+
+              {/* AI Verification Assessment Card */}
+              {(selectedIncident as any).evidence_image_url && (
+                <div className="p-2.5 bg-neutral-950 rounded-xl border border-amber-800/60 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-amber-300 flex items-center gap-1 text-[11px] uppercase tracking-wider">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Multimodal Ground Truth
+                    </span>
+                    <span className="font-mono text-[10px] text-neutral-400">
+                      {(selectedIncident as any).ai_verification?.severity_level || 'ANALYZED'}
+                    </span>
+                  </div>
+
+                  <div className="flex gap-2.5 items-start">
+                    <div 
+                      className="relative cursor-pointer group shrink-0"
+                      onClick={() => setExpandedImage((selectedIncident as any).evidence_image_url)}
+                    >
+                      <img
+                        src={(selectedIncident as any).evidence_image_url}
+                        alt="Disaster Scene"
+                        className="w-20 h-20 object-cover rounded-lg border border-neutral-800 group-hover:border-amber-500 transition-colors"
+                      />
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-lg">
+                        <Eye className="w-4 h-4 text-white" />
+                      </div>
+                    </div>
+                    <div className="text-[11px] space-y-1">
+                      <p className="text-neutral-300 leading-snug">
+                        {(selectedIncident as any).ai_verification?.observations || 'Image captured and logged.'}
+                      </p>
+                      <div className="text-[10px] font-mono text-emerald-400">
+                        Score Elevation: +{(selectedIncident as any).ai_verification?.severity_boost || 20} pts
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block">Ground Coordinates</span>
@@ -627,10 +657,10 @@ export default function RescuerDashboardPage() {
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block mb-1">
                   Corroborated Field Logs ({selectedIncident.caller_notes?.length || 0})
                 </span>
-                <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
+                <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
                   {selectedIncident.caller_notes?.map((note, idx) => (
                     <div key={idx} className="p-2 bg-neutral-950 rounded border border-neutral-800 text-xs text-neutral-300">
-                      &bull; {note}
+                      • {note}
                     </div>
                   ))}
                 </div>
@@ -659,6 +689,30 @@ export default function RescuerDashboardPage() {
           </div>
         )}
       </div>
+
+      {/* EXPANDED IMAGE MODAL */}
+      {expandedImage && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={() => setExpandedImage(null)}
+        >
+          <div className="relative max-w-2xl max-h-[85vh] w-full flex flex-col items-center">
+            <button
+              type="button"
+              onClick={() => setExpandedImage(null)}
+              className="absolute -top-10 right-0 text-white hover:text-neutral-300 text-xs font-mono flex items-center gap-1"
+            >
+              <X className="w-5 h-5" />
+              <span>CLOSE [ESC]</span>
+            </button>
+            <img
+              src={expandedImage}
+              alt="High Resolution Disaster Evidence"
+              className="max-h-[80vh] w-auto rounded-xl border border-neutral-700 shadow-2xl object-contain"
+            />
+          </div>
+        </div>
+      )}
 
       {/* EVACUATION BROADCAST MODAL */}
       {isBroadcastOpen && (
@@ -696,7 +750,7 @@ export default function RescuerDashboardPage() {
               <button
                 type="button"
                 onClick={() => setIsBroadcastOpen(false)}
-                className="flex-1 py-2.5 rounded-xl border border-neutral-800 text-xs font-bold text-neutral-400 hover:bg-neutral-800 transition-colors"
+                className="flex-1 py-2.5 rounded-xl border border-neutral-800 text-xs font-bold text-neutral-400 hover:bg-neutral-850 transition-colors"
               >
                 Cancel
               </button>

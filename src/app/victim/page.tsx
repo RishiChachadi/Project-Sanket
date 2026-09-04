@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { 
   AlertOctagon, 
@@ -17,7 +17,8 @@ import {
   X,
   Truck,
   Clock,
-  RotateCcw
+  RotateCcw,
+  Timer
 } from 'lucide-react';
 
 interface BroadcastAlert {
@@ -36,12 +37,16 @@ export default function VictimPage() {
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const watchIdRef = useRef<number | null>(null);
 
-  // Connectivity & State
+  // Connectivity & Incident State
   const [isOffline, setIsOffline] = useState(false);
   const [incidentId, setIncidentId] = useState<string | null>(null);
   const [incidentStatus, setIncidentStatus] = useState<IncidentStatus>('pending');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  // Auto-Reset Countdown State (in seconds)
+  const [autoResetCountdown, setAutoResetCountdown] = useState<number | null>(null);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Broadcast Alert State
   const [activeBroadcast, setActiveBroadcast] = useState<BroadcastAlert | null>(null);
@@ -60,7 +65,50 @@ export default function VictimPage() {
   // Battery Saver Mode
   const [batterySaver, setBatterySaver] = useState<boolean>(false);
 
-  // Register SW & Network Listener
+  // GPS Watcher Starter
+  const startGpsWatcher = useCallback(() => {
+    if (!('geolocation' in navigator)) return;
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        setCoords({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
+        setAccuracy(Math.round(pos.coords.accuracy));
+      },
+      (err) => {
+        console.warn('GPS degraded, using sector fallback:', err.message);
+        setCoords({ lat: 12.9716, lng: 77.5946 });
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
+  }, []);
+
+  // Full Screen & Form Reset Back to Stage 1
+  const resetToStageOne = useCallback(() => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    setAutoResetCountdown(null);
+    setIncidentId(null);
+    setIncidentStatus('pending');
+    setHeadcount(1);
+    setHasMedical(false);
+    setIsTrapped(false);
+    setLandmarkNotes('');
+    setBatterySaver(false);
+    setStatusMessage(null);
+    setEnrichmentSaved(false);
+    setStage('trigger');
+    startGpsWatcher();
+  }, [startGpsWatcher]);
+
+  // SW & Network Listener
   useEffect(() => {
     if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
       navigator.serviceWorker.register('/sw.js').catch((err) => {
@@ -81,7 +129,17 @@ export default function VictimPage() {
     };
   }, []);
 
-  // BIDIRECTIONAL STATUS SYNC: Listen for dispatcher state changes on this specific incident
+  // Geolocation Init
+  useEffect(() => {
+    startGpsWatcher();
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, [startGpsWatcher]);
+
+  // BIDIRECTIONAL STATUS SYNC & AUTO-RESET TRIGGER
   useEffect(() => {
     if (!incidentId) return;
 
@@ -100,9 +158,26 @@ export default function VictimPage() {
             const updatedStatus = (payload.new as any).status as IncidentStatus;
             setIncidentStatus(updatedStatus);
 
-            // Haptic feedback to alert user that dispatch status changed
             if ('vibrate' in navigator) {
               navigator.vibrate([200, 100, 200, 100, 300]);
+            }
+
+            // Trigger 8-second auto-reset when incident is resolved
+            if (updatedStatus === 'resolved') {
+              setAutoResetCountdown(8);
+              if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+
+              countdownIntervalRef.current = setInterval(() => {
+                setAutoResetCountdown((prev) => {
+                  if (prev === null || prev <= 1) {
+                    clearInterval(countdownIntervalRef.current!);
+                    countdownIntervalRef.current = null;
+                    resetToStageOne();
+                    return null;
+                  }
+                  return prev - 1;
+                });
+              }, 1000);
             }
           }
         }
@@ -111,10 +186,13 @@ export default function VictimPage() {
 
     return () => {
       supabase.removeChannel(channel);
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
     };
-  }, [incidentId]);
+  }, [incidentId, resetToStageOne]);
 
-  // Listen for Realtime Broadcast Alerts from Command
+  // Broadcast Alert Listener
   useEffect(() => {
     const broadcastChannel = supabase
       .channel('disaster-broadcasts')
@@ -130,32 +208,6 @@ export default function VictimPage() {
 
     return () => {
       supabase.removeChannel(broadcastChannel);
-    };
-  }, []);
-
-  // Geolocation Watcher
-  useEffect(() => {
-    if (!('geolocation' in navigator)) return;
-
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        setCoords({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        });
-        setAccuracy(Math.round(pos.coords.accuracy));
-      },
-      (err) => {
-        console.warn('GPS degraded, using sector fallback:', err.message);
-        setCoords({ lat: 12.9716, lng: 77.5946 });
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-    );
-
-    return () => {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-      }
     };
   }, []);
 
@@ -187,6 +239,7 @@ export default function VictimPage() {
 
       setIncidentId(data);
       setIncidentStatus('pending');
+      setAutoResetCountdown(null);
       setStage('followup');
     } catch (err: any) {
       console.error('Data broadcast failed:', err);
@@ -243,8 +296,17 @@ export default function VictimPage() {
     }
   };
 
+  // Premature Resolution Override
   const handleReopenDistress = async () => {
     if (!incidentId) return;
+
+    // Halt auto-reset timer immediately
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    setAutoResetCountdown(null);
+
     try {
       await supabase
         .from('distress_incidents')
@@ -261,12 +323,11 @@ export default function VictimPage() {
     }
   };
 
-  // BATTERY PRESERVATION SCREEN (NOW COMPLETELY DYNAMIC)
+  // ULTRA-LOW POWER / AMOLED BATTERY PRESERVATION
   if (batterySaver) {
     return (
       <main className="min-h-screen bg-black text-neutral-400 font-mono flex flex-col justify-between p-6 select-none">
         <div className="space-y-4 pt-8">
-          {/* Dynamic Status Badge */}
           {incidentStatus === 'pending' && (
             <div className="inline-flex items-center gap-2 border border-amber-800 bg-amber-950/40 text-amber-300 px-3 py-1 rounded text-xs">
               <Clock className="w-4 h-4 animate-pulse" />
@@ -282,9 +343,17 @@ export default function VictimPage() {
           )}
 
           {incidentStatus === 'resolved' && (
-            <div className="inline-flex items-center gap-2 border border-emerald-800 bg-emerald-950/40 text-emerald-400 px-3 py-1 rounded text-xs font-bold">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>INCIDENT MARKED RESOLVED</span>
+            <div className="space-y-3">
+              <div className="inline-flex items-center gap-2 border border-emerald-800 bg-emerald-950/40 text-emerald-400 px-3 py-1 rounded text-xs font-bold">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>INCIDENT RESOLVED</span>
+              </div>
+              {autoResetCountdown !== null && (
+                <div className="flex items-center gap-1.5 text-xs text-neutral-400">
+                  <Timer className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
+                  <span>Returning to SOS screen in <strong className="text-white">{autoResetCountdown}s</strong>...</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -300,7 +369,7 @@ export default function VictimPage() {
             {incidentStatus === 'dispatched'
               ? 'Rescuers are navigating to your location. Keep your position visible if safe.'
               : incidentStatus === 'resolved'
-              ? 'Command center logged this incident as resolved.'
+              ? 'Sector Command has marked this operation resolved.'
               : 'GPS polling halted. Keep this screen active until rescue teams arrive.'}
           </p>
 
@@ -319,16 +388,24 @@ export default function VictimPage() {
             </div>
           </div>
 
-          {/* Premature resolution fail-safe */}
           {incidentStatus === 'resolved' && (
-            <button
-              type="button"
-              onClick={handleReopenDistress}
-              className="w-full py-2.5 rounded border border-red-800 bg-red-950/50 text-red-300 flex items-center justify-center gap-2 text-xs font-bold"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Still in danger? Tap to re-open SOS
-            </button>
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={handleReopenDistress}
+                className="w-full py-2.5 rounded border border-red-800 bg-red-950/50 text-red-300 flex items-center justify-center gap-2 text-xs font-bold"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Still in danger? Cancel reset & re-open SOS
+              </button>
+              <button
+                type="button"
+                onClick={resetToStageOne}
+                className="w-full py-2 rounded bg-neutral-900 text-neutral-300 text-xs font-bold"
+              >
+                Return to SOS Screen Now
+              </button>
+            </div>
           )}
         </div>
 
@@ -382,7 +459,7 @@ export default function VictimPage() {
         </div>
       )}
 
-      {/* Telemetry Ribbon */}
+      {/* Telemetry Header */}
       <header className="flex items-center justify-between border-b border-neutral-800 pb-3">
         <div className="flex items-center gap-2">
           <Radio className="w-5 h-5 text-red-500 animate-pulse" />
@@ -484,10 +561,10 @@ export default function VictimPage() {
         </div>
       )}
 
-      {/* STAGE 2: PROGRESSIVE TRIAGE FOLLOW-UPS (WITH DYNAMIC STATUS BANNER) */}
+      {/* STAGE 2: PROGRESSIVE ENRICHMENT */}
       {stage === 'followup' && (
         <div className="flex-1 flex flex-col justify-between py-3 space-y-4">
-          {/* Dynamic Real-time Status Card */}
+          {/* Real-time Status Card */}
           {incidentStatus === 'pending' && (
             <div className="bg-amber-950/60 border border-amber-800 p-3 rounded-xl flex items-center gap-3">
               <Clock className="w-6 h-6 text-amber-400 shrink-0 animate-pulse" />
@@ -517,31 +594,45 @@ export default function VictimPage() {
           )}
 
           {incidentStatus === 'resolved' && (
-            <div className="bg-emerald-950/80 border border-emerald-600 p-3 rounded-xl space-y-2">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
-                <div>
+            <div className="bg-emerald-950/80 border border-emerald-600 p-3.5 rounded-xl space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                   <h2 className="text-xs font-bold uppercase tracking-wider text-emerald-200">
                     Incident Marked Resolved
                   </h2>
-                  <p className="text-[11px] text-emerald-300/80">
-                    Command center has closed this incident.
-                  </p>
                 </div>
+                {autoResetCountdown !== null && (
+                  <span className="text-[11px] font-mono text-emerald-400 bg-emerald-900/60 px-2 py-0.5 rounded border border-emerald-700">
+                    Resetting in {autoResetCountdown}s
+                  </span>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={handleReopenDistress}
-                className="w-full py-1.5 rounded bg-neutral-900 border border-neutral-700 text-[11px] font-bold text-neutral-300 flex items-center justify-center gap-1.5 hover:text-white"
-              >
-                <RotateCcw className="w-3 h-3 text-red-400" />
-                Still need urgent help? Re-open incident
-              </button>
+              <p className="text-[11px] text-emerald-300/80 leading-relaxed">
+                Sector Command closed this operation. This screen will reset to the main SOS view shortly.
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleReopenDistress}
+                  className="flex-1 py-2 rounded bg-neutral-900 border border-red-900/80 text-[11px] font-bold text-red-300 flex items-center justify-center gap-1.5 hover:bg-neutral-850"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-red-400" />
+                  Still in danger? Cancel reset
+                </button>
+                <button
+                  type="button"
+                  onClick={resetToStageOne}
+                  className="px-3 py-2 rounded bg-emerald-700 hover:bg-emerald-600 text-[11px] font-bold text-white transition-colors"
+                >
+                  Reset Now
+                </button>
+              </div>
             </div>
           )}
 
           <div className="space-y-4 bg-neutral-900/60 p-4 rounded-xl border border-neutral-800">
-            {/* Question 1: Headcount */}
+            {/* Question 1 */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-neutral-200 flex items-center justify-between">
                 <span>1. People stranded:</span>
@@ -565,7 +656,7 @@ export default function VictimPage() {
               </div>
             </div>
 
-            {/* Question 2: Critical Condition Toggles */}
+            {/* Question 2 */}
             <div className="space-y-2 pt-2 border-t border-neutral-800">
               <label className="text-xs font-bold text-neutral-200 block">
                 2. Immediate Hazards / Vulnerabilities
@@ -599,7 +690,7 @@ export default function VictimPage() {
               </div>
             </div>
 
-            {/* Question 3: Micro-Location */}
+            {/* Question 3 */}
             <div className="space-y-1.5 pt-2 border-t border-neutral-800">
               <label className="text-xs font-bold text-neutral-200 block">
                 3. Landmark / Exact Spot (Optional)

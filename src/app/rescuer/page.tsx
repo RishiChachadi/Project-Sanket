@@ -26,6 +26,7 @@ import {
   Truck,
   AlertTriangle,
   Sparkles,
+  Camera,
   Eye
 } from 'lucide-react';
 
@@ -60,8 +61,8 @@ export default function RescuerDashboardPage() {
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [broadcastSent, setBroadcastSent] = useState(false);
 
-  // Expanded Image Modal
-  const [expandedImage, setExpandedImage] = useState<string | null>(null);
+  // Fullscreen Photo Lightbox State
+  const [activePhotoModal, setActivePhotoModal] = useState<{ url: string; incident: Incident } | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -91,7 +92,7 @@ export default function RescuerDashboardPage() {
       osc.start();
       osc.stop(ctx.currentTime + 0.35);
     } catch {
-      // Audio autoplay policy fallback
+      // Autoplay policy fallback
     }
   };
 
@@ -208,9 +209,9 @@ export default function RescuerDashboardPage() {
       'Headcount',
       'Corroboration Count',
       'AI Verified',
+      'Evidence Photo URL',
       'Latitude',
       'Longitude',
-      'Evidence URL',
       'Field Notes',
       'Created At'
     ];
@@ -222,10 +223,10 @@ export default function RescuerDashboardPage() {
       inc.priority_score,
       inc.headcount,
       inc.corroboration_count,
-      (inc as any).ai_verification?.hazard_confirmed ? 'YES' : 'NO',
+      inc.ai_verification?.hazard_confirmed ? 'YES' : 'NO',
+      `"${inc.evidence_image_url || ''}"`,
       inc.latitude,
       inc.longitude,
-      `"${(inc as any).evidence_image_url || ''}"`,
       `"${(inc.caller_notes || []).join(' | ').replace(/"/g, '""')}"`,
       `"${inc.created_at}"`
     ]);
@@ -418,6 +419,7 @@ export default function RescuerDashboardPage() {
             </button>
           </div>
 
+          {/* Filter Chips with Emojis */}
           <div className="p-2.5 border-b border-neutral-800 flex items-center gap-1 overflow-x-auto text-[11px] font-mono no-scrollbar">
             {[
               { id: 'ALL', label: 'ALL' },
@@ -451,7 +453,7 @@ export default function RescuerDashboardPage() {
               filteredIncidents.map((item) => {
                 const isSelected = selectedIncident?.id === item.id;
                 const hazardInfo = getHazardBadge(item.hazard_type);
-                const hasAiVerification = (item as any).ai_verification?.hazard_confirmed;
+                const hasPhoto = Boolean(item.evidence_image_url);
 
                 return (
                   <div
@@ -464,16 +466,30 @@ export default function RescuerDashboardPage() {
                     }`}
                   >
                     <div className="flex items-center justify-between text-xs mb-1">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] flex items-center gap-1 ${hazardInfo.badgeClass}`}>
                           <span>{hazardInfo.emoji}</span>
                           <span>{item.hazard_type}</span>
                         </span>
-                        {hasAiVerification && (
+                        {item.ai_verification?.hazard_confirmed && (
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-950/80 text-amber-300 border border-amber-700 flex items-center gap-1">
                             <Sparkles className="w-2.5 h-2.5" />
                             AI VERIFIED
                           </span>
+                        )}
+                        {hasPhoto && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActivePhotoModal({ url: item.evidence_image_url!, incident: item });
+                            }}
+                            className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-sky-950 text-sky-300 border border-sky-800 flex items-center gap-1 hover:bg-sky-900"
+                            title="Click to view ground photo evidence"
+                          >
+                            <Camera className="w-2.5 h-2.5" />
+                            PHOTO
+                          </button>
                         )}
                       </div>
                       <span className="font-mono text-neutral-400 text-[11px]">Score: {item.priority_score}</span>
@@ -506,10 +522,14 @@ export default function RescuerDashboardPage() {
             showBases={showBases}
             selectedIncident={selectedIncident}
             onSelectIncident={(inc) => setSelectedIncident(inc)}
+            onViewPhoto={(url) => {
+              const inc = incidents.find((i) => i.evidence_image_url === url);
+              if (inc) setActivePhotoModal({ url, incident: inc });
+            }}
           />
         </div>
 
-        {/* Right Column: Dispatch Panel */}
+        {/* Right Column: Dispatch Panel with Ocular Evidence */}
         {selectedIncident && (
           <div className="w-96 border-l border-neutral-800 p-4 flex flex-col justify-between bg-neutral-900/70 shrink-0 overflow-y-auto">
             <div className="space-y-4">
@@ -529,42 +549,57 @@ export default function RescuerDashboardPage() {
                 </span>
               </div>
 
-              {/* AI Verification Assessment Card */}
-              {(selectedIncident as any).evidence_image_url && (
-                <div className="p-2.5 bg-neutral-950 rounded-xl border border-amber-800/60 space-y-2">
+              {/* Dedicated Ocular Evidence Section */}
+              {selectedIncident.evidence_image_url && (
+                <div className="p-3 bg-neutral-950 rounded-xl border border-sky-900/60 space-y-2.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-amber-300 flex items-center gap-1 text-[11px] uppercase tracking-wider">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Multimodal Ground Truth
+                    <span className="font-bold text-sky-300 flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+                      <Camera className="w-3.5 h-3.5" />
+                      Field Photo Evidence
                     </span>
-                    <span className="font-mono text-[10px] text-neutral-400">
-                      {(selectedIncident as any).ai_verification?.severity_level || 'ANALYZED'}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActivePhotoModal({ url: selectedIncident.evidence_image_url!, incident: selectedIncident })}
+                      className="text-[10px] font-mono text-sky-400 hover:text-sky-300 underline flex items-center gap-1"
+                    >
+                      <Eye className="w-3 h-3" />
+                      View Fullscreen
+                    </button>
                   </div>
 
-                  <div className="flex gap-2.5 items-start">
-                    <div 
-                      className="relative cursor-pointer group shrink-0"
-                      onClick={() => setExpandedImage((selectedIncident as any).evidence_image_url)}
-                    >
-                      <img
-                        src={(selectedIncident as any).evidence_image_url}
-                        alt="Disaster Scene"
-                        className="w-20 h-20 object-cover rounded-lg border border-neutral-800 group-hover:border-amber-500 transition-colors"
-                      />
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-lg">
-                        <Eye className="w-4 h-4 text-white" />
-                      </div>
-                    </div>
-                    <div className="text-[11px] space-y-1">
-                      <p className="text-neutral-300 leading-snug">
-                        {(selectedIncident as any).ai_verification?.observations || 'Image captured and logged.'}
-                      </p>
-                      <div className="text-[10px] font-mono text-emerald-400">
-                        Score Elevation: +{(selectedIncident as any).ai_verification?.severity_boost || 20} pts
-                      </div>
+                  <div 
+                    className="relative cursor-pointer group rounded-lg overflow-hidden border border-neutral-800 hover:border-sky-500 transition-colors"
+                    onClick={() => setActivePhotoModal({ url: selectedIncident.evidence_image_url!, incident: selectedIncident })}
+                  >
+                    <img
+                      src={selectedIncident.evidence_image_url}
+                      alt="Ground Evidence"
+                      className="w-full h-36 object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-end p-2">
+                      <span className="text-[10px] text-neutral-200 font-mono flex items-center gap-1">
+                        <Eye className="w-3 h-3 text-sky-400" />
+                        Click to enlarge & inspect
+                      </span>
                     </div>
                   </div>
+
+                  {selectedIncident.ai_verification && (
+                    <div className="p-2 bg-neutral-900 rounded-lg border border-neutral-800 space-y-1 text-[11px]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-amber-400 font-bold flex items-center gap-1 text-[10px]">
+                          <Sparkles className="w-3 h-3" />
+                          AI Ocular Diagnosis:
+                        </span>
+                        <span className="font-mono text-[10px] text-emerald-400">
+                          +{selectedIncident.ai_verification.severity_boost || 20} pts
+                        </span>
+                      </div>
+                      <p className="text-neutral-300 leading-snug">
+                        {selectedIncident.ai_verification.observations}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -690,26 +725,64 @@ export default function RescuerDashboardPage() {
         )}
       </div>
 
-      {/* EXPANDED IMAGE MODAL */}
-      {expandedImage && (
+      {/* FULLSCREEN PHOTO INSPECTION LIGHTBOX */}
+      {activePhotoModal && (
         <div 
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
-          onClick={() => setExpandedImage(null)}
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={() => setActivePhotoModal(null)}
         >
-          <div className="relative max-w-2xl max-h-[85vh] w-full flex flex-col items-center">
-            <button
-              type="button"
-              onClick={() => setExpandedImage(null)}
-              className="absolute -top-10 right-0 text-white hover:text-neutral-300 text-xs font-mono flex items-center gap-1"
-            >
-              <X className="w-5 h-5" />
-              <span>CLOSE [ESC]</span>
-            </button>
-            <img
-              src={expandedImage}
-              alt="High Resolution Disaster Evidence"
-              className="max-h-[80vh] w-auto rounded-xl border border-neutral-700 shadow-2xl object-contain"
-            />
+          <div 
+            className="relative max-w-3xl w-full bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-3 border-b border-neutral-800 flex items-center justify-between bg-neutral-950">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-sky-400" />
+                <span className="text-xs font-black uppercase tracking-wider text-white">
+                  Ground Photo Evidence &bull; Cluster {activePhotoModal.incident.id.slice(0, 8)}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActivePhotoModal(null)}
+                className="text-neutral-400 hover:text-white text-xs font-mono flex items-center gap-1"
+              >
+                <X className="w-4 h-4" />
+                <span>ESC</span>
+              </button>
+            </div>
+
+            {/* Photo View */}
+            <div className="bg-black flex items-center justify-center max-h-[65vh] overflow-hidden">
+              <img
+                src={activePhotoModal.url}
+                alt="Ground Evidence Full"
+                className="max-h-[65vh] w-auto object-contain select-none"
+              />
+            </div>
+
+            {/* Metadata Footer */}
+            <div className="p-3.5 bg-neutral-950 border-t border-neutral-800 flex items-center justify-between text-xs">
+              <div className="space-y-0.5">
+                <div className="text-neutral-300 font-semibold">
+                  Hazard: <strong className="text-white uppercase">{activePhotoModal.incident.hazard_type}</strong> &bull; Priority: {activePhotoModal.incident.priority_score}/100
+                </div>
+                {activePhotoModal.incident.ai_verification && (
+                  <p className="text-[11px] text-neutral-400 leading-snug">
+                    AI Assessment: {activePhotoModal.incident.ai_verification.observations}
+                  </p>
+                )}
+              </div>
+              <a
+                href={activePhotoModal.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-bold shrink-0 transition-colors"
+              >
+                Open Raw File
+              </a>
+            </div>
           </div>
         </div>
       )}

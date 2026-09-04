@@ -16,6 +16,15 @@ export interface Incident {
   status: string;
   caller_notes: string[];
   source_channel: string;
+  evidence_image_url?: string;
+  ai_verification?: {
+    hazard_confirmed?: boolean;
+    detected_hazard?: string;
+    severity_level?: string;
+    severity_boost?: number;
+    observations?: string;
+    verified_at?: string;
+  };
   created_at: string;
 }
 
@@ -25,9 +34,9 @@ interface RescuerMapProps {
   showBases?: boolean;
   selectedIncident: Incident | null;
   onSelectIncident: (inc: Incident) => void;
+  onViewPhoto?: (url: string) => void;
 }
 
-// Auto-pan map smoothly to selected incident
 function MapController({ selectedIncident }: { selectedIncident: Incident | null }) {
   const map = useMap();
   useEffect(() => {
@@ -38,26 +47,26 @@ function MapController({ selectedIncident }: { selectedIncident: Incident | null
   return null;
 }
 
-// Tactical SVG Hazard Pin Generator
 function createIncidentIcon(
   hazardType: string,
   priorityScore: number,
   corroborationCount: number,
+  hasPhoto: boolean,
   isSelected: boolean
 ) {
   const h = hazardType.toLowerCase();
 
-  let pinColor = '#dc2626'; // Default Red
+  let pinColor = '#dc2626';
   let emoji = '🔥';
 
   if (h === 'flood') {
-    pinColor = '#2563eb'; // Electric Blue
+    pinColor = '#2563eb';
     emoji = '🌊';
   } else if (h === 'trapped') {
-    pinColor = '#d97706'; // Amber
+    pinColor = '#d97706';
     emoji = '🏚️';
   } else if (h === 'medical') {
-    pinColor = '#059669'; // Emerald Green
+    pinColor = '#059669';
     emoji = '🚑';
   }
 
@@ -90,7 +99,6 @@ function createIncidentIcon(
         "></div>
       ` : ''}
 
-      <!-- Precision Vector SVG Teardrop Pin -->
       <svg width="36" height="46" viewBox="0 0 34 44" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path
           d="M17 0C7.61 0 0 7.61 0 17C0 27.5 14.5 41.5 16.2 43.1C16.6 43.5 17.4 43.5 17.8 43.1C19.5 41.5 34 27.5 34 17C34 7.61 26.39 0 17 0Z"
@@ -101,7 +109,6 @@ function createIncidentIcon(
         <circle cx="17" cy="17" r="11" fill="#FFFFFF" fill-opacity="0.22" />
       </svg>
 
-      <!-- Centered Hazard Pictogram -->
       <div style="
         position: absolute;
         top: 7px;
@@ -116,7 +123,6 @@ function createIncidentIcon(
         ${emoji}
       </div>
 
-      <!-- Multi-Corroboration Counter Badge -->
       ${corroborationCount > 1 ? `
         <div style="
           position: absolute;
@@ -136,6 +142,24 @@ function createIncidentIcon(
           ${corroborationCount}x
         </div>
       ` : ''}
+
+      ${hasPhoto ? `
+        <div style="
+          position: absolute;
+          bottom: 2px;
+          right: -4px;
+          background: #09090b;
+          color: #38bdf8;
+          border: 1.5px solid #38bdf8;
+          border-radius: 9999px;
+          font-size: 8px;
+          padding: 1px 3px;
+          box-shadow: 0 2px 5px rgba(0,0,0,0.8);
+          line-height: 1;
+        ">
+          📷
+        </div>
+      ` : ''}
     </div>
   `;
 
@@ -143,12 +167,11 @@ function createIncidentIcon(
     className: 'custom-hazard-pin',
     html,
     iconSize: [36, 48],
-    iconAnchor: [18, 46], // Bottom tip points directly to latitude/longitude
+    iconAnchor: [18, 46],
     popupAnchor: [0, -44],
   });
 }
 
-// Emergency Bases & Safe Shelters Icon
 function createBaseIcon(type: EmergencyBase['type']) {
   let bgColor = '#2563eb';
   let label = 'NDRF';
@@ -199,6 +222,7 @@ export default function RescuerMap({
   showBases = true,
   selectedIncident,
   onSelectIncident,
+  onViewPhoto,
 }: RescuerMapProps) {
   const defaultCenter: [number, number] = [12.9716, 77.5946];
 
@@ -237,13 +261,16 @@ export default function RescuerMap({
           </Marker>
         ))}
 
-      {/* CUSTOM SVG HAZARD PINS */}
+      {/* INCIDENT PINS WITH PHOTO PREVIEWS */}
       {incidents.map((incident) => {
         const isSelected = selectedIncident?.id === incident.id;
+        const hasPhoto = Boolean(incident.evidence_image_url);
+
         const customPin = createIncidentIcon(
           incident.hazard_type,
           incident.priority_score,
           incident.corroboration_count,
+          hasPhoto,
           isSelected
         );
 
@@ -257,13 +284,31 @@ export default function RescuerMap({
             }}
           >
             <Popup>
-              <div className="text-xs space-y-1 text-neutral-900 font-sans p-1">
-                <div className="font-bold uppercase text-red-600">
-                  {incident.hazard_type} ({incident.headcount} trapped)
+              <div className="text-xs space-y-1.5 text-neutral-900 font-sans p-1 max-w-[200px]">
+                <div className="font-bold uppercase text-red-600 flex items-center justify-between">
+                  <span>{incident.hazard_type}</span>
+                  <span className="text-[10px] font-mono text-neutral-600">Score: {incident.priority_score}</span>
                 </div>
-                <div>Priority Score: <strong>{incident.priority_score}/100</strong></div>
-                <div>Corroborations: <strong>{incident.corroboration_count} reports</strong></div>
-                <div>Status: <span className="font-semibold uppercase">{incident.status}</span></div>
+                <div>Trapped: <strong>{incident.headcount} people</strong></div>
+
+                {/* Direct Map Popup Thumbnail */}
+                {incident.evidence_image_url && (
+                  <div className="pt-1">
+                    <img
+                      src={incident.evidence_image_url}
+                      alt="Ground Evidence"
+                      onClick={() => onViewPhoto && onViewPhoto(incident.evidence_image_url!)}
+                      className="w-full h-24 object-cover rounded cursor-pointer border border-neutral-300 hover:opacity-90"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onViewPhoto && onViewPhoto(incident.evidence_image_url!)}
+                      className="w-full mt-1 py-1 text-[10px] font-bold bg-neutral-900 text-white rounded hover:bg-neutral-800"
+                    >
+                      Enlarge Ground Photo
+                    </button>
+                  </div>
+                )}
               </div>
             </Popup>
           </Marker>

@@ -43,7 +43,7 @@ function getMarkerColor(priority: number): string {
   return '#10b981';                     // Green: Minor
 }
 
-// Generate tactical square badge HTML icons for emergency bases
+// Generate distinct tactical badge HTML icons for emergency bases and safe shelters
 function createBaseIcon(type: EmergencyBase['type']) {
   let bgColor = '#2563eb'; // NDRF Blue
   let label = 'NDRF';
@@ -54,6 +54,9 @@ function createBaseIcon(type: EmergencyBase['type']) {
   } else if (type === 'HOSPITAL') {
     bgColor = '#7c3aed'; // Hospital Purple
     label = 'MED';
+  } else if (type === 'SHELTER') {
+    bgColor = '#059669'; // Shelter Emerald Green
+    label = 'SAFE';
   }
 
   return L.divIcon({
@@ -70,18 +73,18 @@ function createBaseIcon(type: EmergencyBase['type']) {
         font-weight: 800;
         letter-spacing: 0.5px;
         text-align: center;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.6);
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 38px;
+        width: 40px;
         height: 22px;
       ">
         ${label}
       </div>
     `,
-    iconSize: [38, 22],
-    iconAnchor: [19, 11],
+    iconSize: [40, 22],
+    iconAnchor: [20, 11],
   });
 }
 
@@ -108,7 +111,7 @@ export default function RescuerMap({
 
       <MapController selectedIncident={selectedIncident} />
 
-      {/* EMERGENCY INFRASTRUCTURE BASES */}
+      {/* EMERGENCY INFRASTRUCTURE BASES & SAFE HAVENS */}
       {showBases &&
         bases.map((base) => (
           <Marker
@@ -119,11 +122,11 @@ export default function RescuerMap({
             <Popup>
               <div className="text-xs space-y-1 text-neutral-900 font-sans p-1">
                 <div className="font-bold text-sm text-neutral-900">{base.name}</div>
-                <div className="text-[10px] font-mono uppercase text-neutral-500">
-                  Facility Type: <strong>{base.type}</strong>
+                <div className="text-[10px] font-mono uppercase font-bold text-emerald-700">
+                  Type: {base.type === 'SHELTER' ? 'SAFE ASSEMBLY ZONE / SHELTER' : base.type}
                 </div>
-                <div>Equipment: <strong>{base.capacity}</strong></div>
-                <div>Contact: <a href={`tel:${base.contact}`} className="text-blue-600 underline font-mono">{base.contact}</a></div>
+                <div>Capacity / Resources: <strong>{base.capacity}</strong></div>
+                <div>Emergency Contact: <a href={`tel:${base.contact}`} className="text-blue-600 underline font-mono">{base.contact}</a></div>
               </div>
             </Popup>
           </Marker>

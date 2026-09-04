@@ -18,7 +18,8 @@ import {
   Truck,
   Clock,
   RotateCcw,
-  Timer
+  Timer,
+  Globe
 } from 'lucide-react';
 
 interface BroadcastAlert {
@@ -28,8 +29,135 @@ interface BroadcastAlert {
 }
 
 type IncidentStatus = 'pending' | 'dispatched' | 'resolved';
+type Language = 'EN' | 'KN' | 'HI';
+
+const TRANSLATIONS = {
+  EN: {
+    appTitle: 'Project Sanket',
+    gpsLocking: 'Locking GPS...',
+    offlineBadge: 'OFFLINE',
+    stage1Heading: 'Emergency Distress',
+    stage1Sub: 'Tap once to lock coordinates and alert rescue commanders.',
+    selectDanger: 'Select Immediate Danger',
+    flood: 'Rising Flood',
+    fire: 'Active Fire',
+    trapped: 'Trapped / Collapse',
+    medical: 'Medical Urgent',
+    transmitSos: 'TRANSMIT SOS',
+    instantTagged: 'Instant Dispatched • GPS Tagged',
+    smsFallback: 'NO DATA? SEND VIA SMS (112)',
+    stage2Queued: 'Beacon Queued for Dispatch',
+    stage2QueuedSub: 'Sector Command received your location. Provide details below:',
+    stage2Dispatched: 'Rescue Units Dispatched',
+    stage2DispatchedSub: 'Emergency responders have been deployed and are en route.',
+    stage2Resolved: 'Incident Marked Resolved',
+    stage2ResolvedSub: 'Sector Command closed this operation. Returning shortly.',
+    q1Headcount: '1. People stranded:',
+    person: 'Person(s)',
+    q2Hazards: '2. Immediate Hazards / Vulnerabilities',
+    waterTrapped: 'Water rising inside / Physically trapped',
+    infantElderly: 'Infant / Elderly / Oxygen dependent',
+    q3Landmark: '3. Landmark / Exact Spot (Optional)',
+    landmarkPlaceholder: 'e.g. 2nd floor balcony, blue gate',
+    sendUpdates: 'Transmit Field Updates',
+    updatesSynced: 'Field Notes Synced! Entering Battery Saver...',
+    enableBatterySaver: 'Enable Battery Preservation Now',
+    batteryTitle: 'Battery Preservation Active',
+    batterySub: 'GPS polling halted. Keep this screen active until rescue teams arrive.',
+    smsRedundant: 'Send Redundant SMS Backup',
+    exitBattery: 'Exit Battery Preservation Mode',
+    stillInDanger: 'Still in danger? Cancel reset',
+    resetNow: 'Reset Now',
+    resettingIn: 'Resetting in',
+    commandAlert: 'OFFICIAL COMMAND ALERT',
+    helpline: 'National Emergency Helpline: Call 112',
+  },
+  KN: {
+    appTitle: 'ಸಂಕೇತ್ ರಕ್ಷಣೆ',
+    gpsLocking: 'ಜಿಪಿಎಸ್ ಹುಡುಕಲಾಗುತ್ತಿದೆ...',
+    offlineBadge: 'ಆಫ್‌ಲೈನ್',
+    stage1Heading: 'ತುರ್ತು ಅಪಾಯ ಸಂಕೇತ',
+    stage1Sub: 'ರಕ್ಷಣಾ ಕಮಾಂಡರ್‌ಗಳಿಗೆ ತಕ್ಷಣ ಮಾಹಿತಿ ರವಾನಿಸಲು ಒಮ್ಮೆ ಒತ್ತಿ.',
+    selectDanger: 'ತಕ್ಷಣದ ಅಪಾಯವನ್ನು ಆಯ್ಕೆಮಾಡಿ',
+    flood: 'ಹೆಚ್ಚುತ್ತಿರುವ ಪ್ರವಾಹ',
+    fire: 'ಬೆಂಕಿ ಅವಘಡ',
+    trapped: 'ಸಿಲುಕಿಕೊಂಡಿದ್ದೇವೆ / ಕುಸಿತ',
+    medical: 'ತುರ್ತು ವೈದ್ಯಕೀಯ',
+    transmitSos: 'ತುರ್ತು ಎಸ್‌ಒಎಸ್ ಕಳುಹಿಸಿ',
+    instantTagged: 'ತ್ವರಿತ ರವಾನೆ • ಜಿಪಿಎಸ್ ಲಾಕ್ ಆಗಿದೆ',
+    smsFallback: 'ಇಂಟರ್ನೆಟ್ ಇಲ್ಲವೇ? SMS ಕಳುಹಿಸಿ (112)',
+    stage2Queued: 'ರಕ್ಷಣಾ ಪಟ್ಟಿಯಲ್ಲಿ ದಾಖಲಾಗಿದೆ',
+    stage2QueuedSub: 'ನಿಮ್ಮ ಸ್ಥಳ ದಾಖಲಾಗಿದೆ. ರಕ್ಷಣಾ ತಂಡಕ್ಕೆ ಹೆಚ್ಚಿನ ಮಾಹಿತಿ ನೀಡಿ:',
+    stage2Dispatched: 'ರಕ್ಷಣಾ ಪಡೆಗಳು ಹೊರಟಿವೆ',
+    stage2DispatchedSub: 'ತುರ್ತು ರಕ್ಷಣಾ ತಂಡಗಳು ನಿಮ್ಮ ಸ್ಥಳದತ್ತ ಧಾವಿಸುತ್ತಿವೆ.',
+    stage2Resolved: 'ರಕ್ಷಣಾ ಕಾರ್ಯಾಚರಣೆ ಪೂರ್ಣಗೊಂಡಿದೆ',
+    stage2ResolvedSub: 'ಕಮಾಂಡ್ ಸೆಂಟರ್ ಈ ಕರೆಯನ್ನು ಪರಿಹರಿಸಿದೆ.',
+    q1Headcount: '1. ಸಿಲುಕಿರುವ ಜನರ ಸಂಖ್ಯೆ:',
+    person: 'ಜನರು',
+    q2Hazards: '2. ತಕ್ಷಣದ ಅಪಾಯಗಳು / ವಿಶೇಷ ಕಾಳಜಿ',
+    waterTrapped: 'ನೀರು ಒಳನುಗ್ಗುತ್ತಿದೆ / ಸಿಲುಕಿಕೊಂಡಿದ್ದೇವೆ',
+    infantElderly: 'ಶಿಶು / ಹಿರಿಯರು / ಆಮ್ಲಜನಕದ ಅಗತ್ಯವಿದೆ',
+    q3Landmark: '3. ಹತ್ತಿರದ ಗುರುತು ಅಥವಾ ಮಹಡಿ (ಐಚ್ಛಿಕ)',
+    landmarkPlaceholder: 'ಉದಾ: 2ನೇ ಮಹಡಿ ಬಾಲ್ಕನಿ, ನೀಲಿ ಗೇಟ್',
+    sendUpdates: 'ಮಾಹಿತಿಯನ್ನು ರವಾನಿಸಿ',
+    updatesSynced: 'ಮಾಹಿತಿ ತಲುಪಿದೆ! ಬ್ಯಾಟರಿ ಸೇವರ್ ಆನ್ ಆಗುತ್ತಿದೆ...',
+    enableBatterySaver: 'ಈಗಲೇ ಬ್ಯಾಟರಿ ಉಳಿತಾಯ ಮೋಡ್ ಆನ್ ಮಾಡಿ',
+    batteryTitle: 'ಬ್ಯಾಟರಿ ಉಳಿತಾಯ ಮೋಡ್ ಸಕ್ರಿಯವಾಗಿದೆ',
+    batterySub: 'ಜಿಪಿಎಸ್ ನಿಲ್ಲಿಸಲಾಗಿದೆ. ರಕ್ಷಣಾ ತಂಡ ಬರುವವರೆಗೆ ಈ ಪರದೆಯನ್ನು ಮುಚ್ಚಬೇಡಿ.',
+    smsRedundant: 'ಬದಲಿ SMS ರವಾನಿಸಿ',
+    exitBattery: 'ಬ್ಯಾಟರಿ ಸೇವರ್‌ನಿಂದ ನಿರ್ಗಮಿಸಿ',
+    stillInDanger: 'ಇನ್ನೂ ಅಪಾಯದಲ್ಲಿದ್ದೀರಾ? ಮರು-ತೆರೆಯಿರಿ',
+    resetNow: 'ಈಗಲೇ ಮರುಹೊಂದಿಸಿ',
+    resettingIn: 'ಮರುಹೊಂದಿಕೆ:',
+    commandAlert: 'ಸರ್ಕಾರಿ ಕಮಾಂಡ್ ಎಚ್ಚರಿಕೆ',
+    helpline: 'ರಾಷ್ಟ್ರೀಯ ತುರ್ತು ಸಹಾಯವಾಣಿ: 112 ಕರೆ ಮಾಡಿ',
+  },
+  HI: {
+    appTitle: 'प्रोजेक्ट संकेत',
+    gpsLocking: 'जीपीएस लॉक हो रहा है...',
+    offlineBadge: 'ऑफलाइन',
+    stage1Heading: 'आपातकालीन संकट (SOS)',
+    stage1Sub: 'बचाव दल को अपना स्थान भेजने के लिए एक बार टैप करें।',
+    selectDanger: 'तत्काल संकट चुनें',
+    flood: 'बाढ़ / पानी का भराव',
+    fire: 'आग का संकट',
+    trapped: 'फंसे हुए हैं / मलबा',
+    medical: 'चिकित्सा आपातकाल',
+    transmitSos: 'आपातकालीन SOS भेजें',
+    instantTagged: 'तुरंत सतर्क • जीपीएस से जुड़ा',
+    smsFallback: 'इंटरनेट बंद है? SMS भेजें (112)',
+    stage2Queued: 'मदद के लिए कतार में है',
+    stage2QueuedSub: 'कमांड सेंटर को आपका स्थान मिला। कृपया नीचे विवरण दें:',
+    stage2Dispatched: 'बचाव दल रवाना हो चुका है',
+    stage2DispatchedSub: 'आपातकालीन बचाव कर्मी आपके स्थान की ओर आ रहे हैं।',
+    stage2Resolved: 'राहत कार्य पूरा हुआ',
+    stage2ResolvedSub: 'कमांड सेंटर ने इस घटना को सुलझा लिया है।',
+    q1Headcount: '1. फंसे हुए लोगों की संख्या:',
+    person: 'लोग',
+    q2Hazards: '2. गंभीर खतरे / विशेष स्थिति',
+    waterTrapped: 'अंदर पानी बढ़ रहा है / फंसे हुए हैं',
+    infantElderly: 'शिशु / बुजुर्ग / ऑक्सीजन की आवश्यकता',
+    q3Landmark: '3. पहचान चिन्ह या सटीक मंजिल (वैकल्पिक)',
+    landmarkPlaceholder: 'उदा. दूसरी मंजिल की बालकनी, नीला गेट',
+    sendUpdates: 'अतिरिक्त विवरण भेजें',
+    updatesSynced: 'जानकारी भेजी गई! बैटरी सेवर सक्रिय...',
+    enableBatterySaver: 'बैटरी सेवर चालू करें',
+    batteryTitle: 'बैटरी सेवर मोड सक्रिय',
+    batterySub: 'बचाव दल के आने तक फोन की रोशनी कम कर दी गई है।',
+    smsRedundant: 'बैकअप SMS भेजें',
+    exitBattery: 'बैटरी सेवर से बाहर निकलें',
+    stillInDanger: 'अभी भी खतरे में हैं? फिर से खोलें',
+    resetNow: 'तुरंत रीसेट करें',
+    resettingIn: 'रीसेट होने में:',
+    commandAlert: 'आधिकारिक आपातकालीन चेतावनी',
+    helpline: 'राष्ट्रीय आपातकालीन हेल्पलाइन: 112 पर कॉल करें',
+  },
+};
 
 export default function VictimPage() {
+  const [lang, setLang] = useState<Language>('EN');
+  const t = TRANSLATIONS[lang];
+
   const [stage, setStage] = useState<'trigger' | 'followup'>('trigger');
   
   // Geolocation
@@ -37,14 +165,14 @@ export default function VictimPage() {
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const watchIdRef = useRef<number | null>(null);
 
-  // Connectivity & Incident State
+  // Connectivity & State
   const [isOffline, setIsOffline] = useState(false);
   const [incidentId, setIncidentId] = useState<string | null>(null);
   const [incidentStatus, setIncidentStatus] = useState<IncidentStatus>('pending');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  // Auto-Reset Countdown State (in seconds)
+  // Auto-Reset Countdown
   const [autoResetCountdown, setAutoResetCountdown] = useState<number | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -65,7 +193,6 @@ export default function VictimPage() {
   // Battery Saver Mode
   const [batterySaver, setBatterySaver] = useState<boolean>(false);
 
-  // GPS Watcher Starter
   const startGpsWatcher = useCallback(() => {
     if (!('geolocation' in navigator)) return;
     if (watchIdRef.current !== null) {
@@ -88,7 +215,6 @@ export default function VictimPage() {
     );
   }, []);
 
-  // Full Screen & Form Reset Back to Stage 1
   const resetToStageOne = useCallback(() => {
     if (countdownIntervalRef.current) {
       clearInterval(countdownIntervalRef.current);
@@ -108,7 +234,6 @@ export default function VictimPage() {
     startGpsWatcher();
   }, [startGpsWatcher]);
 
-  // SW & Network Listener
   useEffect(() => {
     if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
       navigator.serviceWorker.register('/sw.js').catch((err) => {
@@ -129,7 +254,6 @@ export default function VictimPage() {
     };
   }, []);
 
-  // Geolocation Init
   useEffect(() => {
     startGpsWatcher();
     return () => {
@@ -139,7 +263,6 @@ export default function VictimPage() {
     };
   }, [startGpsWatcher]);
 
-  // BIDIRECTIONAL STATUS SYNC & AUTO-RESET TRIGGER
   useEffect(() => {
     if (!incidentId) return;
 
@@ -162,7 +285,6 @@ export default function VictimPage() {
               navigator.vibrate([200, 100, 200, 100, 300]);
             }
 
-            // Trigger 8-second auto-reset when incident is resolved
             if (updatedStatus === 'resolved') {
               setAutoResetCountdown(8);
               if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
@@ -192,7 +314,6 @@ export default function VictimPage() {
     };
   }, [incidentId, resetToStageOne]);
 
-  // Broadcast Alert Listener
   useEffect(() => {
     const broadcastChannel = supabase
       .channel('disaster-broadcasts')
@@ -231,7 +352,7 @@ export default function VictimPage() {
         p_lng: lng,
         p_hazard: selectedHazard,
         p_headcount: 1,
-        p_note: 'Initial SOS Triggered - Awaiting follow-up',
+        p_note: `Initial SOS [${lang}] - Awaiting follow-up`,
         p_source: 'PWA_PROGRESSIVE'
       });
 
@@ -296,11 +417,9 @@ export default function VictimPage() {
     }
   };
 
-  // Premature Resolution Override
   const handleReopenDistress = async () => {
     if (!incidentId) return;
 
-    // Halt auto-reset timer immediately
     if (countdownIntervalRef.current) {
       clearInterval(countdownIntervalRef.current);
       countdownIntervalRef.current = null;
@@ -323,7 +442,6 @@ export default function VictimPage() {
     }
   };
 
-  // ULTRA-LOW POWER / AMOLED BATTERY PRESERVATION
   if (batterySaver) {
     return (
       <main className="min-h-screen bg-black text-neutral-400 font-mono flex flex-col justify-between p-6 select-none">
@@ -331,27 +449,27 @@ export default function VictimPage() {
           {incidentStatus === 'pending' && (
             <div className="inline-flex items-center gap-2 border border-amber-800 bg-amber-950/40 text-amber-300 px-3 py-1 rounded text-xs">
               <Clock className="w-4 h-4 animate-pulse" />
-              <span>BEACON QUEUED &bull; AWAITING DISPATCH</span>
+              <span>{t.stage2Queued.toUpperCase()}</span>
             </div>
           )}
 
           {incidentStatus === 'dispatched' && (
             <div className="inline-flex items-center gap-2 border border-blue-700 bg-blue-950/60 text-blue-300 px-3 py-1 rounded text-xs font-bold animate-pulse">
               <Truck className="w-4 h-4" />
-              <span>RESCUE TEAM EN ROUTE</span>
+              <span>{t.stage2Dispatched.toUpperCase()}</span>
             </div>
           )}
 
           {incidentStatus === 'resolved' && (
-            <div className="space-y-3">
+            <div className="space-y-2">
               <div className="inline-flex items-center gap-2 border border-emerald-800 bg-emerald-950/40 text-emerald-400 px-3 py-1 rounded text-xs font-bold">
                 <CheckCircle2 className="w-4 h-4" />
-                <span>INCIDENT RESOLVED</span>
+                <span>{t.stage2Resolved.toUpperCase()}</span>
               </div>
               {autoResetCountdown !== null && (
                 <div className="flex items-center gap-1.5 text-xs text-neutral-400">
                   <Timer className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
-                  <span>Returning to SOS screen in <strong className="text-white">{autoResetCountdown}s</strong>...</span>
+                  <span>{t.resettingIn} <strong className="text-white">{autoResetCountdown}s</strong>...</span>
                 </div>
               )}
             </div>
@@ -359,18 +477,18 @@ export default function VictimPage() {
 
           <h1 className="text-xl font-bold text-neutral-200">
             {incidentStatus === 'dispatched' 
-              ? 'First Responders Deployed' 
+              ? t.stage2Dispatched 
               : incidentStatus === 'resolved'
-              ? 'Rescue Operation Complete'
-              : 'Battery Preservation Active'}
+              ? t.stage2Resolved
+              : t.batteryTitle}
           </h1>
 
           <p className="text-xs text-neutral-500 leading-relaxed">
             {incidentStatus === 'dispatched'
-              ? 'Rescuers are navigating to your location. Keep your position visible if safe.'
+              ? t.stage2DispatchedSub
               : incidentStatus === 'resolved'
-              ? 'Sector Command has marked this operation resolved.'
-              : 'GPS polling halted. Keep this screen active until rescue teams arrive.'}
+              ? t.stage2ResolvedSub
+              : t.batterySub}
           </p>
 
           <div className="border border-neutral-900 bg-neutral-950 p-3 rounded text-xs space-y-1 text-neutral-400">
@@ -382,8 +500,8 @@ export default function VictimPage() {
                 incidentStatus === 'dispatched' ? 'text-blue-400' :
                 incidentStatus === 'resolved' ? 'text-emerald-400' : 'text-amber-400'
               }`}>
-                {incidentStatus === 'dispatched' ? 'TEAM EN ROUTE (DISPATCHED)' :
-                 incidentStatus === 'resolved' ? 'RESOLVED BY COMMAND' : 'QUEUED FOR DISPATCH'}
+                {incidentStatus === 'dispatched' ? t.stage2Dispatched :
+                 incidentStatus === 'resolved' ? t.stage2Resolved : t.stage2Queued}
               </span>
             </div>
           </div>
@@ -396,14 +514,14 @@ export default function VictimPage() {
                 className="w-full py-2.5 rounded border border-red-800 bg-red-950/50 text-red-300 flex items-center justify-center gap-2 text-xs font-bold"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                Still in danger? Cancel reset & re-open SOS
+                {t.stillInDanger}
               </button>
               <button
                 type="button"
                 onClick={resetToStageOne}
                 className="w-full py-2 rounded bg-neutral-900 text-neutral-300 text-xs font-bold"
               >
-                Return to SOS Screen Now
+                {t.resetNow}
               </button>
             </div>
           )}
@@ -415,7 +533,7 @@ export default function VictimPage() {
             className="w-full py-3 rounded border border-neutral-800 bg-neutral-900/60 text-neutral-300 flex items-center justify-center gap-2 text-xs font-bold"
           >
             <MessageSquare className="w-4 h-4 text-emerald-400" />
-            Send Redundant SMS Backup
+            {t.smsRedundant}
           </a>
           <button
             type="button"
@@ -423,7 +541,7 @@ export default function VictimPage() {
             className="w-full py-2 text-neutral-600 hover:text-neutral-400 text-xs flex items-center justify-center gap-1"
           >
             <SunMedium className="w-3.5 h-3.5" />
-            Exit Battery Preservation Mode
+            {t.exitBattery}
           </button>
         </div>
       </main>
@@ -432,14 +550,14 @@ export default function VictimPage() {
 
   return (
     <main className="min-h-screen bg-neutral-950 text-white font-sans flex flex-col justify-between p-4 max-w-md mx-auto select-none">
-      {/* Realtime Commander Emergency Advisory Banner */}
+      {/* Official Advisory Banner */}
       {activeBroadcast && (
         <div className="mb-3 bg-red-600 border border-red-500 text-white p-3 rounded-xl shadow-lg animate-pulse flex items-start justify-between gap-2">
           <div className="flex items-start gap-2.5">
             <Megaphone className="w-5 h-5 text-white shrink-0 mt-0.5" />
             <div>
               <div className="text-[10px] font-black uppercase tracking-wider bg-red-800 px-1.5 py-0.5 rounded inline-block">
-                OFFICIAL COMMAND ALERT
+                {t.commandAlert}
               </div>
               <p className="text-xs font-bold mt-1 leading-snug">
                 {activeBroadcast.message}
@@ -459,52 +577,63 @@ export default function VictimPage() {
         </div>
       )}
 
-      {/* Telemetry Header */}
+      {/* Top Telemetry Ribbon with 1-Tap Vernacular Switcher */}
       <header className="flex items-center justify-between border-b border-neutral-800 pb-3">
         <div className="flex items-center gap-2">
           <Radio className="w-5 h-5 text-red-500 animate-pulse" />
-          <span className="text-xs font-black tracking-widest uppercase">Project Sanket</span>
+          <span className="text-xs font-black tracking-widest uppercase">{t.appTitle}</span>
         </div>
         
         <div className="flex items-center gap-2">
-          {isOffline && (
-            <div className="flex items-center gap-1 text-[10px] font-mono bg-red-950/80 border border-red-800 text-red-300 px-1.5 py-0.5 rounded">
-              <WifiOff className="w-3 h-3" />
-              <span>OFFLINE</span>
-            </div>
-          )}
+          {/* Vernacular Language Selector */}
+          <div className="flex items-center bg-neutral-900 border border-neutral-800 rounded-lg p-0.5 text-[11px] font-bold">
+            {(['EN', 'KN', 'HI'] as Language[]).map((l) => (
+              <button
+                key={l}
+                type="button"
+                onClick={() => setLang(l)}
+                className={`px-1.5 py-0.5 rounded transition-colors ${
+                  lang === l
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'text-neutral-400 hover:text-neutral-200'
+                }`}
+              >
+                {l === 'EN' ? 'EN' : l === 'KN' ? 'ಕನ್ನಡ' : 'हिन्दी'}
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center gap-1 text-[11px] font-mono bg-neutral-900 border border-neutral-800 px-2 py-1 rounded">
             <MapPin className="w-3.5 h-3.5 text-emerald-400" />
             <span>
-              {coords ? `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}` : 'Locking GPS...'}
+              {coords ? `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}` : t.gpsLocking}
             </span>
-            {accuracy && <span className="text-neutral-500 text-[9px]">(&plusmn;{accuracy}m)</span>}
           </div>
         </div>
       </header>
 
-      {/* STAGE 1: MINIMAL 1-TAP SOS */}
+      {/* STAGE 1: 1-TAP PANIC BEACON */}
       {stage === 'trigger' && (
         <div className="flex-1 flex flex-col justify-center space-y-5 my-4">
           <div className="text-center space-y-1">
             <h1 className="text-2xl font-black uppercase tracking-tight text-neutral-100">
-              Emergency Distress
+              {t.stage1Heading}
             </h1>
             <p className="text-xs text-neutral-400">
-              Tap once to lock coordinates and alert rescue commanders.
+              {t.stage1Sub}
             </p>
           </div>
 
           <div className="space-y-2">
             <label className="text-[10px] font-mono tracking-wider uppercase text-neutral-400">
-              Select Immediate Danger
+              {t.selectDanger}
             </label>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { id: 'Flood', label: 'Rising Flood' },
-                { id: 'Fire', label: 'Active Fire' },
-                { id: 'Trapped', label: 'Trapped / Collapse' },
-                { id: 'Medical', label: 'Medical Urgent' },
+                { id: 'Flood', label: t.flood },
+                { id: 'Fire', label: t.fire },
+                { id: 'Trapped', label: t.trapped },
+                { id: 'Medical', label: t.medical },
               ].map((h) => (
                 <button
                   key={h.id}
@@ -535,10 +664,10 @@ export default function VictimPage() {
                 <>
                   <AlertOctagon className="w-12 h-12 text-white" />
                   <span className="text-xl font-black uppercase tracking-widest">
-                    TRANSMIT SOS
+                    {t.transmitSos}
                   </span>
                   <span className="text-[10px] text-red-200 font-mono">
-                    Instant Dispatched &bull; GPS Tagged
+                    {t.instantTagged}
                   </span>
                 </>
               )}
@@ -550,7 +679,7 @@ export default function VictimPage() {
             className="w-full py-3 rounded-xl border border-neutral-800 bg-neutral-900 hover:bg-neutral-850 flex items-center justify-center gap-2 text-xs font-bold text-neutral-300 transition-colors"
           >
             <MessageSquare className="w-4 h-4 text-emerald-400" />
-            <span>NO DATA? SEND VIA SMS (112)</span>
+            <span>{t.smsFallback}</span>
           </a>
 
           {statusMessage && (
@@ -561,19 +690,18 @@ export default function VictimPage() {
         </div>
       )}
 
-      {/* STAGE 2: PROGRESSIVE ENRICHMENT */}
+      {/* STAGE 2: PROGRESSIVE TRIAGE ENRICHMENT */}
       {stage === 'followup' && (
         <div className="flex-1 flex flex-col justify-between py-3 space-y-4">
-          {/* Real-time Status Card */}
           {incidentStatus === 'pending' && (
             <div className="bg-amber-950/60 border border-amber-800 p-3 rounded-xl flex items-center gap-3">
               <Clock className="w-6 h-6 text-amber-400 shrink-0 animate-pulse" />
               <div>
                 <h2 className="text-xs font-bold uppercase tracking-wider text-amber-200">
-                  Beacon Queued for Dispatch
+                  {t.stage2Queued}
                 </h2>
                 <p className="text-[11px] text-amber-300/80">
-                  Sector Command received your location. Provide details below to equip rescuers:
+                  {t.stage2QueuedSub}
                 </p>
               </div>
             </div>
@@ -584,10 +712,10 @@ export default function VictimPage() {
               <Truck className="w-6 h-6 text-blue-400 shrink-0" />
               <div>
                 <h2 className="text-xs font-black uppercase tracking-wider text-blue-200">
-                  Rescue Units Dispatched
+                  {t.stage2Dispatched}
                 </h2>
                 <p className="text-[11px] text-blue-300">
-                  Emergency responders have been deployed and are en route to your coordinates.
+                  {t.stage2DispatchedSub}
                 </p>
               </div>
             </div>
@@ -599,17 +727,17 @@ export default function VictimPage() {
                 <div className="flex items-center gap-2.5">
                   <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                   <h2 className="text-xs font-bold uppercase tracking-wider text-emerald-200">
-                    Incident Marked Resolved
+                    {t.stage2Resolved}
                   </h2>
                 </div>
                 {autoResetCountdown !== null && (
                   <span className="text-[11px] font-mono text-emerald-400 bg-emerald-900/60 px-2 py-0.5 rounded border border-emerald-700">
-                    Resetting in {autoResetCountdown}s
+                    {t.resettingIn} {autoResetCountdown}s
                   </span>
                 )}
               </div>
               <p className="text-[11px] text-emerald-300/80 leading-relaxed">
-                Sector Command closed this operation. This screen will reset to the main SOS view shortly.
+                {t.stage2ResolvedSub}
               </p>
               <div className="flex items-center gap-2 pt-1">
                 <button
@@ -618,14 +746,14 @@ export default function VictimPage() {
                   className="flex-1 py-2 rounded bg-neutral-900 border border-red-900/80 text-[11px] font-bold text-red-300 flex items-center justify-center gap-1.5 hover:bg-neutral-850"
                 >
                   <RotateCcw className="w-3.5 h-3.5 text-red-400" />
-                  Still in danger? Cancel reset
+                  {t.stillInDanger}
                 </button>
                 <button
                   type="button"
                   onClick={resetToStageOne}
                   className="px-3 py-2 rounded bg-emerald-700 hover:bg-emerald-600 text-[11px] font-bold text-white transition-colors"
                 >
-                  Reset Now
+                  {t.resetNow}
                 </button>
               </div>
             </div>
@@ -635,8 +763,8 @@ export default function VictimPage() {
             {/* Question 1 */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-neutral-200 flex items-center justify-between">
-                <span>1. People stranded:</span>
-                <span className="text-red-400 font-mono">{headcount} Person(s)</span>
+                <span>{t.q1Headcount}</span>
+                <span className="text-red-400 font-mono">{headcount} {t.person}</span>
               </label>
               <div className="flex items-center gap-2">
                 {[1, 2, 3, 4, 5].map((num) => (
@@ -659,7 +787,7 @@ export default function VictimPage() {
             {/* Question 2 */}
             <div className="space-y-2 pt-2 border-t border-neutral-800">
               <label className="text-xs font-bold text-neutral-200 block">
-                2. Immediate Hazards / Vulnerabilities
+                {t.q2Hazards}
               </label>
               <div className="space-y-1.5">
                 <button
@@ -671,7 +799,7 @@ export default function VictimPage() {
                       : 'border-neutral-800 bg-neutral-900 text-neutral-400'
                   }`}
                 >
-                  <span>Water rising inside / Physically trapped</span>
+                  <span>{t.waterTrapped}</span>
                   <span className="font-mono text-[10px]">{isTrapped ? '[YES]' : '[NO]'}</span>
                 </button>
 
@@ -684,7 +812,7 @@ export default function VictimPage() {
                       : 'border-neutral-800 bg-neutral-900 text-neutral-400'
                   }`}
                 >
-                  <span>Infant / Elderly / Oxygen dependent</span>
+                  <span>{t.infantElderly}</span>
                   <span className="font-mono text-[10px]">{hasMedical ? '[YES]' : '[NO]'}</span>
                 </button>
               </div>
@@ -693,11 +821,11 @@ export default function VictimPage() {
             {/* Question 3 */}
             <div className="space-y-1.5 pt-2 border-t border-neutral-800">
               <label className="text-xs font-bold text-neutral-200 block">
-                3. Landmark / Exact Spot (Optional)
+                {t.q3Landmark}
               </label>
               <input
                 type="text"
-                placeholder="e.g. 2nd floor balcony, blue gate"
+                placeholder={t.landmarkPlaceholder}
                 value={landmarkNotes}
                 onChange={(e) => setLandmarkNotes(e.target.value)}
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-100 placeholder:text-neutral-600 focus:outline-none focus:border-red-500"
@@ -717,12 +845,12 @@ export default function VictimPage() {
               ) : enrichmentSaved ? (
                 <>
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Field Notes Synced! Entering Battery Saver...</span>
+                  <span>{t.updatesSynced}</span>
                 </>
               ) : (
                 <>
                   <Send className="w-4 h-4" />
-                  <span>Transmit Field Updates</span>
+                  <span>{t.sendUpdates}</span>
                 </>
               )}
             </button>
@@ -733,7 +861,7 @@ export default function VictimPage() {
               className="w-full py-2.5 rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-400 text-xs font-semibold flex items-center justify-center gap-1.5 hover:text-neutral-200"
             >
               <BatteryCharging className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Enable Battery Preservation Now</span>
+              <span>{t.enableBatterySaver}</span>
             </button>
           </div>
         </div>
@@ -745,7 +873,7 @@ export default function VictimPage() {
           href="tel:112"
           className="text-xs font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
         >
-          National Emergency Helpline: <strong className="text-neutral-300 underline">Call 112</strong>
+          {t.helpline}
         </a>
       </footer>
     </main>

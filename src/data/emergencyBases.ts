@@ -55,7 +55,7 @@ export const EMERGENCY_BASES: EmergencyBase[] = [
     latitude: 12.9295,
     longitude: 77.5818,
     contact: '101 / 080-22971525',
-    capacity: '2 Water Bowser, Structural Rescue Gear',
+    capacity: '2 Water Bowsers, Structural Gear',
   },
   {
     id: 'fire-hebbal',
@@ -104,6 +104,44 @@ export const EMERGENCY_BASES: EmergencyBase[] = [
     contact: '080-25024444',
     capacity: 'Air Ambulance Pad, Pediatric Emergency',
   },
+
+  // Designated Safe Assembly Zones & Evacuation Shelters
+  {
+    id: 'shelter-kanteerava',
+    name: 'Kanteerava Indoor Stadium Safe Zone',
+    type: 'SHELTER',
+    latitude: 12.9698,
+    longitude: 77.5926,
+    contact: '080-22211786',
+    capacity: 'Capacity: 3,500 Evacuees • Generator Backup • Food & Clean Water Camp',
+  },
+  {
+    id: 'shelter-palace',
+    name: 'Palace Grounds Disaster Relief Camp',
+    type: 'SHELTER',
+    latitude: 13.0068,
+    longitude: 77.5813,
+    contact: '1077 (Disaster HQ)',
+    capacity: 'Capacity: 8,000 Evacuees • Helicopter Landing Area • Field Hospital',
+  },
+  {
+    id: 'shelter-koramangala',
+    name: 'Koramangala Indoor Relief Centre',
+    type: 'SHELTER',
+    latitude: 12.9344,
+    longitude: 77.6190,
+    contact: '080-25530101',
+    capacity: 'Capacity: 2,000 Evacuees • Emergency Sanitation & Medical Supplies',
+  },
+  {
+    id: 'shelter-national-college',
+    name: 'National College Grounds Safe Haven',
+    type: 'SHELTER',
+    latitude: 12.9436,
+    longitude: 77.5739,
+    contact: '080-26674441',
+    capacity: 'Capacity: 2,500 Evacuees • Community Kitchen & Dry Ration Depot',
+  },
 ];
 
 // Haversine distance calculator in kilometers
@@ -113,7 +151,7 @@ export function calculateDistanceKm(
   lat2: number,
   lon2: number
 ): number {
-  const R = 6371; // Earth's radius in km
+  const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =

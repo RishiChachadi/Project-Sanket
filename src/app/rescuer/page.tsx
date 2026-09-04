@@ -21,7 +21,8 @@ import {
   Megaphone,
   Archive,
   AlertCircle,
-  X
+  X,
+  Tent
 } from 'lucide-react';
 
 const RescuerMap = dynamic(() => import('@/components/RescuerMap'), {
@@ -75,7 +76,7 @@ export default function RescuerDashboardPage() {
       osc.start();
       osc.stop(ctx.currentTime + 0.35);
     } catch {
-      // Audio autoplay policy fallback
+      // Autoplay fallback
     }
   };
 
@@ -156,7 +157,6 @@ export default function RescuerDashboardPage() {
       .eq('id', id);
   };
 
-  // BROADCAST TRANSMITTER
   const handleTransmitBroadcast = async () => {
     if (!broadcastMessage.trim()) return;
 
@@ -182,7 +182,6 @@ export default function RescuerDashboardPage() {
     });
   };
 
-  // CSV EXPORT ENGINE
   const exportToCSV = () => {
     if (incidents.length === 0) return;
 
@@ -230,36 +229,52 @@ export default function RescuerDashboardPage() {
     return inc.hazard_type.toLowerCase() === selectedFilter.toLowerCase();
   });
 
+  // Calculate nearest Emergency Response Bases (Fire, NDRF, Hospital)
   const nearestBases = selectedIncident
-    ? EMERGENCY_BASES.map((b) => ({
-        ...b,
-        distanceKm: calculateDistanceKm(
-          selectedIncident.latitude,
-          selectedIncident.longitude,
-          b.latitude,
-          b.longitude
-        ),
-      }))
+    ? EMERGENCY_BASES.filter((b) => b.type !== 'SHELTER')
+        .map((b) => ({
+          ...b,
+          distanceKm: calculateDistanceKm(
+            selectedIncident.latitude,
+            selectedIncident.longitude,
+            b.latitude,
+            b.longitude
+          ),
+        }))
         .sort((a, b) => a.distanceKm - b.distanceKm)
-        .slice(0, 3)
+        .slice(0, 2)
     : [];
+
+  // Specifically calculate the Nearest Safe Evacuation Shelter
+  const nearestShelter = selectedIncident
+    ? EMERGENCY_BASES.filter((b) => b.type === 'SHELTER')
+        .map((b) => ({
+          ...b,
+          distanceKm: calculateDistanceKm(
+            selectedIncident.latitude,
+            selectedIncident.longitude,
+            b.latitude,
+            b.longitude
+          ),
+        }))
+        .sort((a, b) => a.distanceKm - b.distanceKm)[0]
+    : null;
 
   return (
     <div className="h-screen w-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden font-sans">
-      {/* Tactical Header */}
+      {/* Tactical Ribbon */}
       <header className="h-14 border-b border-neutral-800 px-4 flex items-center justify-between bg-neutral-900 shrink-0">
         <div className="flex items-center gap-3">
           <ShieldAlert className="w-6 h-6 text-red-500" />
           <div>
             <h1 className="text-sm font-black tracking-wider uppercase">
-              Incident Command System (ICS) — Common Operating Picture
+              Incident Command System (ICS) — Sector Command
             </h1>
-            <p className="text-[11px] text-neutral-400">Sector Command & Spatial Dispatch</p>
+            <p className="text-[11px] text-neutral-400">Common Operating Picture & Evacuation Dispatch</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2.5 text-xs font-mono">
-          {/* Emergency Evacuation Broadcast Trigger */}
           <button
             type="button"
             onClick={() => setIsBroadcastOpen(true)}
@@ -269,18 +284,15 @@ export default function RescuerDashboardPage() {
             <span>BROADCAST ALERT</span>
           </button>
 
-          {/* CSV Export Button */}
           <button
             type="button"
             onClick={exportToCSV}
             className="flex items-center gap-1.5 px-2 py-1 rounded border border-neutral-700 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 transition-colors"
-            title="Download incident data as CSV"
           >
             <Download className="w-3.5 h-3.5 text-blue-400" />
             <span>EXPORT CSV</span>
           </button>
 
-          {/* Base Layer Toggle */}
           <button
             type="button"
             onClick={() => setShowBases(!showBases)}
@@ -291,10 +303,9 @@ export default function RescuerDashboardPage() {
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
-            <span>{showBases ? 'BASES ON' : 'BASES OFF'}</span>
+            <span>{showBases ? 'BASES & SHELTERS ON' : 'BASES HIDDEN'}</span>
           </button>
 
-          {/* Audio Chime Toggle */}
           <button
             type="button"
             onClick={() => setAudioAlertsEnabled(!audioAlertsEnabled)}
@@ -314,11 +325,10 @@ export default function RescuerDashboardPage() {
         </div>
       </header>
 
-      {/* Main Command Grid */}
+      {/* Main Operating Grid */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Column: Triage Queue & Tab Switcher */}
         <div className="w-88 border-r border-neutral-800 flex flex-col bg-neutral-900/40 shrink-0">
-          {/* Active vs Resolved Switcher */}
           <div className="grid grid-cols-2 border-b border-neutral-800 text-xs font-mono font-bold">
             <button
               type="button"
@@ -364,7 +374,6 @@ export default function RescuerDashboardPage() {
             ))}
           </div>
 
-          {/* Queue List */}
           <div className="flex-1 overflow-y-auto divide-y divide-neutral-800/60">
             {filteredIncidents.length === 0 ? (
               <div className="p-6 text-center text-xs text-neutral-500 flex flex-col items-center gap-2">
@@ -425,7 +434,7 @@ export default function RescuerDashboardPage() {
           />
         </div>
 
-        {/* Right Column: Dispatch & CAD Panel */}
+        {/* Right Column: Dispatch Panel with Evacuation CAD Routing */}
         {selectedIncident && (
           <div className="w-96 border-l border-neutral-800 p-4 flex flex-col justify-between bg-neutral-900/70 shrink-0 overflow-y-auto">
             <div className="space-y-4">
@@ -446,7 +455,7 @@ export default function RescuerDashboardPage() {
               </div>
 
               <div>
-                <span className="text-[10px] font-semibold text-neutral-400 uppercase block">Incident Coordinates</span>
+                <span className="text-[10px] font-semibold text-neutral-400 uppercase block">Ground Coordinates</span>
                 <div className="flex items-center justify-between mt-1">
                   <span className="text-xs font-mono text-white flex items-center gap-1">
                     <Navigation2 className="w-3.5 h-3.5 text-red-500" />
@@ -464,13 +473,45 @@ export default function RescuerDashboardPage() {
                 </div>
               </div>
 
-              {/* NEAREST BASES */}
-              <div className="space-y-2 pt-1 border-t border-neutral-800">
-                <span className="text-[10px] font-semibold text-neutral-400 uppercase block flex items-center justify-between">
-                  <span>Closest Emergency Bases</span>
-                  <span className="font-mono text-emerald-400">PostGIS Proximity</span>
+              {/* NEAREST SAFE EVACUATION SHELTER */}
+              {nearestShelter && (
+                <div className="p-2.5 bg-emerald-950/40 border border-emerald-800 rounded-xl space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                      <Tent className="w-3.5 h-3.5" />
+                      Nearest Safe Haven (Shelter)
+                    </span>
+                    <span className="font-mono text-xs font-black text-emerald-300">
+                      {nearestShelter.distanceKm} km
+                    </span>
+                  </div>
+                  <div className="font-bold text-xs text-white">{nearestShelter.name}</div>
+                  <p className="text-[10px] text-neutral-300 leading-tight">
+                    {nearestShelter.capacity}
+                  </p>
+                  <div className="flex items-center justify-between pt-1 text-[10px]">
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&origin=${selectedIncident.latitude},${selectedIncident.longitude}&destination=${nearestShelter.latitude},${nearestShelter.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-emerald-400 underline font-bold flex items-center gap-1"
+                    >
+                      <span>Evacuation Route</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                    <a href={`tel:${nearestShelter.contact}`} className="font-mono text-neutral-400 hover:text-white">
+                      Camp HQ: {nearestShelter.contact}
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* CLOSEST RESPONSE BASES */}
+              <div className="space-y-1.5 pt-1 border-t border-neutral-800">
+                <span className="text-[10px] font-semibold text-neutral-400 uppercase block">
+                  First Responder Posts (Fire / NDRF / Medical)
                 </span>
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   {nearestBases.map((base) => (
                     <div
                       key={base.id}
@@ -482,17 +523,14 @@ export default function RescuerDashboardPage() {
                           {base.distanceKm} km
                         </span>
                       </div>
-                      <p className="text-[10px] text-neutral-400 leading-tight line-clamp-1">
-                        {base.capacity}
-                      </p>
-                      <div className="pt-0.5 flex items-center justify-between text-[10px]">
-                        <span className="font-mono text-neutral-500">Call Base:</span>
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-neutral-400 truncate max-w-[200px]">{base.capacity}</span>
                         <a
                           href={`tel:${base.contact}`}
-                          className="font-mono text-blue-400 hover:underline flex items-center gap-1"
+                          className="font-mono text-blue-400 hover:underline flex items-center gap-1 shrink-0"
                         >
                           <PhoneCall className="w-2.5 h-2.5" />
-                          {base.contact}
+                          Call
                         </a>
                       </div>
                     </div>
@@ -505,7 +543,7 @@ export default function RescuerDashboardPage() {
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block mb-1">
                   Corroborated Field Logs ({selectedIncident.caller_notes?.length || 0})
                 </span>
-                <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
+                <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
                   {selectedIncident.caller_notes?.map((note, idx) => (
                     <div key={idx} className="p-2 bg-neutral-950 rounded border border-neutral-800 text-xs text-neutral-300">
                       &bull; {note}
@@ -566,7 +604,7 @@ export default function RescuerDashboardPage() {
               rows={3}
               value={broadcastMessage}
               onChange={(e) => setBroadcastMessage(e.target.value)}
-              placeholder="e.g. FLASH FLOOD WARNING: Breached lake bund in Sector 4. Immediately move to 2nd floor or higher ground. Avoid basement shelters."
+              placeholder="e.g. FLASH FLOOD WARNING: Breached lake bund in Sector 4. Proceed to Kanteerava Stadium Safe Haven immediately."
               className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-3 text-xs text-white placeholder:text-neutral-600 focus:outline-none focus:border-red-500"
             />
 

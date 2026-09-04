@@ -156,11 +156,15 @@ export default function VictimSOSPage() {
 
       setStatusMessage('Distress beacon received! Dispatch team notified.');
     } catch (err: any) {
-      // If network fails during request, fallback to queue
+      console.error('RPC Error:', err);
+      // Fallback to queue if network or server error occurs
       await queueDistressReport(payload);
       const remaining = await getQueuedReports();
       setQueuedCount(remaining.length);
-      setStatusMessage('Connection interrupted. Beacon queued to outbox.');
+
+      const errMsg = err?.message || 'Unknown error';
+      const errCode = err?.code ? ` (Code: ${err.code})` : '';
+      setStatusMessage(`Error transmitting beacon: ${errMsg}${errCode}. Beacon queued to outbox.`);
     } finally {
       setIsSubmitting(false);
     }

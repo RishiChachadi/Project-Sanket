@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Marker, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import { EmergencyBase } from '@/data/emergencyBases';
 
 export interface Incident {
   id: string;
@@ -19,6 +21,8 @@ export interface Incident {
 
 interface RescuerMapProps {
   incidents: Incident[];
+  bases?: EmergencyBase[];
+  showBases?: boolean;
   selectedIncident: Incident | null;
   onSelectIncident: (inc: Incident) => void;
 }
@@ -34,12 +38,60 @@ function MapController({ selectedIncident }: { selectedIncident: Incident | null
 }
 
 function getMarkerColor(priority: number): string {
-  if (priority >= 75) return '#ef4444'; // Red: Critical / Immediate
-  if (priority >= 50) return '#f59e0b'; // Amber: Urgent / Delayed
+  if (priority >= 75) return '#ef4444'; // Red: Critical
+  if (priority >= 50) return '#f59e0b'; // Amber: Urgent
   return '#10b981';                     // Green: Minor
 }
 
-export default function RescuerMap({ incidents, selectedIncident, onSelectIncident }: RescuerMapProps) {
+// Generate tactical square badge HTML icons for emergency bases
+function createBaseIcon(type: EmergencyBase['type']) {
+  let bgColor = '#2563eb'; // NDRF Blue
+  let label = 'NDRF';
+
+  if (type === 'FIRE') {
+    bgColor = '#ea580c'; // Fire Orange
+    label = 'FIRE';
+  } else if (type === 'HOSPITAL') {
+    bgColor = '#7c3aed'; // Hospital Purple
+    label = 'MED';
+  }
+
+  return L.divIcon({
+    className: 'custom-base-icon',
+    html: `
+      <div style="
+        background-color: ${bgColor};
+        color: #ffffff;
+        border: 2px solid #ffffff;
+        border-radius: 6px;
+        padding: 2px 4px;
+        font-family: monospace;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+        text-align: center;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        height: 22px;
+      ">
+        ${label}
+      </div>
+    `,
+    iconSize: [38, 22],
+    iconAnchor: [19, 11],
+  });
+}
+
+export default function RescuerMap({
+  incidents,
+  bases = [],
+  showBases = true,
+  selectedIncident,
+  onSelectIncident,
+}: RescuerMapProps) {
   const defaultCenter: [number, number] = [12.9716, 77.5946];
 
   return (
@@ -56,6 +108,28 @@ export default function RescuerMap({ incidents, selectedIncident, onSelectIncide
 
       <MapController selectedIncident={selectedIncident} />
 
+      {/* EMERGENCY INFRASTRUCTURE BASES */}
+      {showBases &&
+        bases.map((base) => (
+          <Marker
+            key={base.id}
+            position={[base.latitude, base.longitude]}
+            icon={createBaseIcon(base.type)}
+          >
+            <Popup>
+              <div className="text-xs space-y-1 text-neutral-900 font-sans p-1">
+                <div className="font-bold text-sm text-neutral-900">{base.name}</div>
+                <div className="text-[10px] font-mono uppercase text-neutral-500">
+                  Facility Type: <strong>{base.type}</strong>
+                </div>
+                <div>Equipment: <strong>{base.capacity}</strong></div>
+                <div>Contact: <a href={`tel:${base.contact}`} className="text-blue-600 underline font-mono">{base.contact}</a></div>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
+      {/* DISTRESS BEACONS */}
       {incidents.map((incident) => {
         const color = getMarkerColor(incident.priority_score);
         const dynamicRadius = 8 + Math.min(incident.corroboration_count * 2, 14);

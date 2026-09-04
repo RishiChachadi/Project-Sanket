@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { EmergencyBase } from '@/data/emergencyBases';
 
@@ -27,6 +27,7 @@ interface RescuerMapProps {
   onSelectIncident: (inc: Incident) => void;
 }
 
+// Auto-pan map smoothly to selected incident
 function MapController({ selectedIncident }: { selectedIncident: Incident | null }) {
   const map = useMap();
   useEffect(() => {
@@ -37,25 +38,129 @@ function MapController({ selectedIncident }: { selectedIncident: Incident | null
   return null;
 }
 
-function getMarkerColor(priority: number): string {
-  if (priority >= 75) return '#ef4444'; // Red: Critical
-  if (priority >= 50) return '#f59e0b'; // Amber: Urgent
-  return '#10b981';                     // Green: Minor
+// Tactical SVG Hazard Pin Generator
+function createIncidentIcon(
+  hazardType: string,
+  priorityScore: number,
+  corroborationCount: number,
+  isSelected: boolean
+) {
+  const h = hazardType.toLowerCase();
+
+  let pinColor = '#dc2626'; // Default Red
+  let emoji = '🔥';
+
+  if (h === 'flood') {
+    pinColor = '#2563eb'; // Electric Blue
+    emoji = '🌊';
+  } else if (h === 'trapped') {
+    pinColor = '#d97706'; // Amber
+    emoji = '🏚️';
+  } else if (h === 'medical') {
+    pinColor = '#059669'; // Emerald Green
+    emoji = '🚑';
+  }
+
+  const isCritical = priorityScore >= 75;
+
+  const html = `
+    <div style="
+      position: relative;
+      width: 36px;
+      height: 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      ${isSelected ? 'transform: scale(1.22); z-index: 999;' : ''}
+      filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6));
+    ">
+      ${isCritical || isSelected ? `
+        <div style="
+          position: absolute;
+          top: 2px;
+          left: 3px;
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          background-color: ${pinColor};
+          opacity: 0.45;
+          animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+          pointer-events: none;
+        "></div>
+      ` : ''}
+
+      <!-- Precision Vector SVG Teardrop Pin -->
+      <svg width="36" height="46" viewBox="0 0 34 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path
+          d="M17 0C7.61 0 0 7.61 0 17C0 27.5 14.5 41.5 16.2 43.1C16.6 43.5 17.4 43.5 17.8 43.1C19.5 41.5 34 27.5 34 17C34 7.61 26.39 0 17 0Z"
+          fill="${pinColor}"
+          stroke="#FFFFFF"
+          stroke-width="${isSelected ? '2.5' : '1.8'}"
+        />
+        <circle cx="17" cy="17" r="11" fill="#FFFFFF" fill-opacity="0.22" />
+      </svg>
+
+      <!-- Centered Hazard Pictogram -->
+      <div style="
+        position: absolute;
+        top: 7px;
+        left: 0;
+        width: 36px;
+        text-align: center;
+        font-size: 15px;
+        line-height: 1;
+        user-select: none;
+        pointer-events: none;
+      ">
+        ${emoji}
+      </div>
+
+      <!-- Multi-Corroboration Counter Badge -->
+      ${corroborationCount > 1 ? `
+        <div style="
+          position: absolute;
+          top: -4px;
+          right: -4px;
+          background: #0f172a;
+          color: #fde047;
+          border: 1.5px solid #fde047;
+          border-radius: 9999px;
+          font-size: 9px;
+          font-weight: 900;
+          font-family: monospace;
+          padding: 1px 4px;
+          box-shadow: 0 2px 5px rgba(0,0,0,0.8);
+          line-height: 1.2;
+        ">
+          ${corroborationCount}x
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  return L.divIcon({
+    className: 'custom-hazard-pin',
+    html,
+    iconSize: [36, 48],
+    iconAnchor: [18, 46], // Bottom tip points directly to latitude/longitude
+    popupAnchor: [0, -44],
+  });
 }
 
-// Generate distinct tactical badge HTML icons for emergency bases and safe shelters
+// Emergency Bases & Safe Shelters Icon
 function createBaseIcon(type: EmergencyBase['type']) {
-  let bgColor = '#2563eb'; // NDRF Blue
+  let bgColor = '#2563eb';
   let label = 'NDRF';
 
   if (type === 'FIRE') {
-    bgColor = '#ea580c'; // Fire Orange
+    bgColor = '#ea580c';
     label = 'FIRE';
   } else if (type === 'HOSPITAL') {
-    bgColor = '#7c3aed'; // Hospital Purple
+    bgColor = '#7c3aed';
     label = 'MED';
   } else if (type === 'SHELTER') {
-    bgColor = '#059669'; // Shelter Emerald Green
+    bgColor = '#059669';
     label = 'SAFE';
   }
 
@@ -132,22 +237,21 @@ export default function RescuerMap({
           </Marker>
         ))}
 
-      {/* DISTRESS BEACONS */}
+      {/* CUSTOM SVG HAZARD PINS */}
       {incidents.map((incident) => {
-        const color = getMarkerColor(incident.priority_score);
-        const dynamicRadius = 8 + Math.min(incident.corroboration_count * 2, 14);
+        const isSelected = selectedIncident?.id === incident.id;
+        const customPin = createIncidentIcon(
+          incident.hazard_type,
+          incident.priority_score,
+          incident.corroboration_count,
+          isSelected
+        );
 
         return (
-          <CircleMarker
+          <Marker
             key={incident.id}
-            center={[incident.latitude, incident.longitude]}
-            radius={dynamicRadius}
-            pathOptions={{
-              color: '#ffffff',
-              fillColor: color,
-              fillOpacity: 0.85,
-              weight: 2,
-            }}
+            position={[incident.latitude, incident.longitude]}
+            icon={customPin}
             eventHandlers={{
               click: () => onSelectIncident(incident),
             }}
@@ -158,11 +262,11 @@ export default function RescuerMap({
                   {incident.hazard_type} ({incident.headcount} trapped)
                 </div>
                 <div>Priority Score: <strong>{incident.priority_score}/100</strong></div>
-                <div>Corroborations: <strong>{incident.corroboration_count}</strong></div>
+                <div>Corroborations: <strong>{incident.corroboration_count} reports</strong></div>
                 <div>Status: <span className="font-semibold uppercase">{incident.status}</span></div>
               </div>
             </Popup>
-          </CircleMarker>
+          </Marker>
         );
       })}
     </MapContainer>

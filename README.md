@@ -283,6 +283,3 @@ npx vercel --prod
 
 ---
 
-## 📄 License & Attribution
-
-Distributed under the **MIT License**. Built for humanitarian relief, municipal disaster agencies, and urban emergency search and rescue teams.

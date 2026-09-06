@@ -14,6 +14,7 @@ export interface Incident {
   priority_score: number;
   corroboration_count: number;
   status: string;
+  assigned_unit?: string | null;
   caller_notes: string[];
   source_channel: string;
   evidence_image_url?: string;
@@ -24,7 +25,7 @@ export interface Incident {
     severity_boost?: number;
     observations?: string;
     verified_at?: string;
-  };
+  } | null;
   created_at: string;
 }
 
@@ -52,6 +53,7 @@ function createIncidentIcon(
   priorityScore: number,
   corroborationCount: number,
   hasPhoto: boolean,
+  isDispatched: boolean,
   isSelected: boolean
 ) {
   const h = hazardType.toLowerCase();
@@ -140,6 +142,24 @@ function createIncidentIcon(
           line-height: 1.2;
         ">
           ${corroborationCount}x
+        </div>
+      ` : ''}
+
+      ${isDispatched ? `
+        <div style="
+          position: absolute;
+          top: -4px;
+          left: -4px;
+          background: #1e3a8a;
+          color: #93c5fd;
+          border: 1.5px solid #3b82f6;
+          border-radius: 9999px;
+          font-size: 8px;
+          padding: 1px 3px;
+          box-shadow: 0 2px 5px rgba(0,0,0,0.8);
+          line-height: 1;
+        ">
+          🚒
         </div>
       ` : ''}
 
@@ -240,7 +260,6 @@ export default function RescuerMap({
 
       <MapController selectedIncident={selectedIncident} />
 
-      {/* EMERGENCY INFRASTRUCTURE BASES & SAFE HAVENS */}
       {showBases &&
         bases.map((base) => (
           <Marker
@@ -261,16 +280,17 @@ export default function RescuerMap({
           </Marker>
         ))}
 
-      {/* INCIDENT PINS WITH PHOTO PREVIEWS */}
       {incidents.map((incident) => {
         const isSelected = selectedIncident?.id === incident.id;
         const hasPhoto = Boolean(incident.evidence_image_url);
+        const isDispatched = incident.status === 'dispatched';
 
         const customPin = createIncidentIcon(
           incident.hazard_type,
           incident.priority_score,
           incident.corroboration_count,
           hasPhoto,
+          isDispatched,
           isSelected
         );
 
@@ -284,14 +304,20 @@ export default function RescuerMap({
             }}
           >
             <Popup>
-              <div className="text-xs space-y-1.5 text-neutral-900 font-sans p-1 max-w-[200px]">
+              <div className="text-xs space-y-1.5 text-neutral-900 font-sans p-1 max-w-[220px]">
                 <div className="font-bold uppercase text-red-600 flex items-center justify-between">
                   <span>{incident.hazard_type}</span>
                   <span className="text-[10px] font-mono text-neutral-600">Score: {incident.priority_score}</span>
                 </div>
                 <div>Trapped: <strong>{incident.headcount} people</strong></div>
 
-                {/* Direct Map Popup Thumbnail */}
+                {incident.assigned_unit && (
+                  <div className="p-1.5 bg-blue-50 border border-blue-200 rounded text-[11px] text-blue-900">
+                    <span className="font-bold uppercase text-[9px] block text-blue-700">Deployed Asset:</span>
+                    {incident.assigned_unit}
+                  </div>
+                )}
+
                 {incident.evidence_image_url && (
                   <div className="pt-1">
                     <img

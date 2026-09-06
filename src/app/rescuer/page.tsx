@@ -254,7 +254,7 @@ export default function RescuerDashboardPage() {
       if (data?.report) {
         setAarReport(data.report);
       } else {
-        setAarReport('Failed to generate AAR narrative.');
+        setAarReport(data?.error || 'Unable to load debrief report.');
       }
     } catch (err) {
       setAarReport('Network error communicating with AI evaluation service.');

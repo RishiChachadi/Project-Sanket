@@ -27,7 +27,8 @@ import {
   AlertTriangle,
   Sparkles,
   Camera,
-  Eye
+  Eye,
+  CheckCircle2
 } from 'lucide-react';
 
 const RescuerMap = dynamic(() => import('@/components/RescuerMap'), {
@@ -39,12 +40,33 @@ const RescuerMap = dynamic(() => import('@/components/RescuerMap'), {
   ),
 });
 
+// Operational Field Response Assets for CAD Dispatch
+const AVAILABLE_CAD_UNITS = [
+  { id: 'ndrf-boat-alpha', name: 'NDRF Inflatable Flood Boat Alpha', category: 'Flood' },
+  { id: 'ndrf-boat-bravo', name: 'NDRF Inflatable Flood Boat Bravo', category: 'Flood' },
+  { id: 'sdrf-usar-1', name: 'Karnataka SDRF USAR (Urban Search & Rescue) Unit 1', category: 'Trapped' },
+  { id: 'fire-heavy-highgrounds', name: 'High Grounds Heavy Water Tender 1', category: 'Fire' },
+  { id: 'fire-foam-mayohall', name: 'Mayo Hall Foam Tender & Hydraulic Platform', category: 'Fire' },
+  { id: 'fire-dinghy-hebbal', name: 'Hebbal Fire Inflatable Rescue Dinghy', category: 'Flood' },
+  { id: 'med-als-victoria', name: 'Victoria Trauma Advanced Life Support (ALS) Ambulance', category: 'Medical' },
+  { id: 'med-icu-bowring', name: 'Bowring Critical Resuscitation Van', category: 'Medical' },
+  { id: 'civil-defence-qrt', name: 'Civil Defence Quick Response Team (QRT-4)', category: 'General' },
+];
+
 function getHazardBadge(type: string) {
   const t = type.toLowerCase();
   if (t === 'flood') return { emoji: '🌊', badgeClass: 'bg-blue-950 text-blue-300 border-blue-800 border' };
   if (t === 'fire') return { emoji: '🔥', badgeClass: 'bg-red-950 text-red-300 border-red-800 border' };
   if (t === 'trapped') return { emoji: '🏚️', badgeClass: 'bg-amber-950 text-amber-300 border-amber-800 border' };
   return { emoji: '🚑', badgeClass: 'bg-emerald-950 text-emerald-300 border-emerald-800 border' };
+}
+
+function getRecommendedUnit(hazardType: string): string {
+  const h = hazardType.toLowerCase();
+  if (h === 'flood') return 'NDRF Inflatable Flood Boat Alpha';
+  if (h === 'fire') return 'High Grounds Heavy Water Tender 1';
+  if (h === 'trapped') return 'Karnataka SDRF USAR (Urban Search & Rescue) Unit 1';
+  return 'Victoria Trauma Advanced Life Support (ALS) Ambulance';
 }
 
 export default function RescuerDashboardPage() {
@@ -56,6 +78,9 @@ export default function RescuerDashboardPage() {
   const [audioAlertsEnabled, setAudioAlertsEnabled] = useState(true);
   const [showBases, setShowBases] = useState(true);
 
+  // CAD Unit Selection State
+  const [selectedUnit, setSelectedUnit] = useState<string>('');
+
   // Broadcast Modal State
   const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
@@ -65,6 +90,17 @@ export default function RescuerDashboardPage() {
   const [activePhotoModal, setActivePhotoModal] = useState<{ url: string; incident: Incident } | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Keep recommended unit in sync when selected incident changes
+  useEffect(() => {
+    if (selectedIncident) {
+      if (selectedIncident.assigned_unit) {
+        setSelectedUnit(selectedIncident.assigned_unit);
+      } else {
+        setSelectedUnit(getRecommendedUnit(selectedIncident.hazard_type));
+      }
+    }
+  }, [selectedIncident?.id, selectedIncident?.hazard_type, selectedIncident?.assigned_unit]);
 
   const playTacticalChime = () => {
     if (!audioAlertsEnabled) return;
@@ -92,7 +128,7 @@ export default function RescuerDashboardPage() {
       osc.start();
       osc.stop(ctx.currentTime + 0.35);
     } catch {
-      // Autoplay policy fallback
+      // Audio autoplay policy fallback
     }
   };
 
@@ -166,11 +202,31 @@ export default function RescuerDashboardPage() {
     };
   }, [viewTab, audioAlertsEnabled]);
 
-  const updateIncidentStatus = async (id: string, nextStatus: string) => {
+  // CAD Dispatch Action: Bind unit and update status atomically
+  const handleDispatchUnit = async () => {
+    if (!selectedIncident) return;
+    const unitToAssign = selectedUnit || getRecommendedUnit(selectedIncident.hazard_type);
+
+    const updatedNotes = selectedIncident.caller_notes || [];
+    updatedNotes.push(`CAD Dispatched: ${unitToAssign}`);
+
     await supabase
       .from('distress_incidents')
-      .update({ status: nextStatus, updated_at: new Date().toISOString() })
-      .eq('id', id);
+      .update({ 
+        status: 'dispatched', 
+        assigned_unit: unitToAssign,
+        caller_notes: updatedNotes,
+        updated_at: new Date().toISOString() 
+      })
+      .eq('id', selectedIncident.id);
+  };
+
+  const handleResolveIncident = async () => {
+    if (!selectedIncident) return;
+    await supabase
+      .from('distress_incidents')
+      .update({ status: 'resolved', updated_at: new Date().toISOString() })
+      .eq('id', selectedIncident.id);
   };
 
   const handleTransmitBroadcast = async () => {
@@ -205,6 +261,7 @@ export default function RescuerDashboardPage() {
       'Cluster ID',
       'Status',
       'Hazard Type',
+      'Assigned CAD Unit',
       'Priority Score',
       'Headcount',
       'Corroboration Count',
@@ -220,6 +277,7 @@ export default function RescuerDashboardPage() {
       `"${inc.id}"`,
       `"${inc.status}"`,
       `"${inc.hazard_type}"`,
+      `"${inc.assigned_unit || 'UNASSIGNED'}"`,
       inc.priority_score,
       inc.headcount,
       inc.corroboration_count,
@@ -292,7 +350,7 @@ export default function RescuerDashboardPage() {
             <h1 className="text-sm font-black tracking-wider uppercase">
               Incident Command System (ICS) — Sector Command
             </h1>
-            <p className="text-[11px] text-neutral-400">Common Operating Picture & Evacuation Dispatch</p>
+            <p className="text-[11px] text-neutral-400">Common Operating Picture & CAD Resource Allocation</p>
           </div>
         </div>
 
@@ -474,7 +532,7 @@ export default function RescuerDashboardPage() {
                         {item.ai_verification?.hazard_confirmed && (
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-950/80 text-amber-300 border border-amber-700 flex items-center gap-1">
                             <Sparkles className="w-2.5 h-2.5" />
-                            AI VERIFIED
+                            AI
                           </span>
                         )}
                         {hasPhoto && (
@@ -504,7 +562,15 @@ export default function RescuerDashboardPage() {
                       </span>
                     </div>
 
-                    <p className="text-xs text-neutral-400 line-clamp-1">
+                    {/* Show Assigned Unit if Dispatched */}
+                    {item.assigned_unit && (
+                      <div className="text-[10px] font-mono text-blue-300 flex items-center gap-1 truncate my-0.5">
+                        <Truck className="w-3 h-3 text-blue-400 shrink-0" />
+                        <span className="truncate">{item.assigned_unit}</span>
+                      </div>
+                    )}
+
+                    <p className="text-xs text-neutral-400 line-clamp-1 mt-1">
                       {item.caller_notes?.[item.caller_notes.length - 1] || 'No field notes'}
                     </p>
                   </div>
@@ -529,7 +595,7 @@ export default function RescuerDashboardPage() {
           />
         </div>
 
-        {/* Right Column: Dispatch Panel with Ocular Evidence */}
+        {/* Right Column: Dispatch & CAD Assignment Panel */}
         {selectedIncident && (
           <div className="w-96 border-l border-neutral-800 p-4 flex flex-col justify-between bg-neutral-900/70 shrink-0 overflow-y-auto">
             <div className="space-y-4">
@@ -548,6 +614,19 @@ export default function RescuerDashboardPage() {
                   {selectedIncident.status}
                 </span>
               </div>
+
+              {/* ACTIVE DEPLOYED ASSET BANNER */}
+              {selectedIncident.assigned_unit && (
+                <div className="p-2.5 bg-blue-950/60 border border-blue-700 rounded-xl space-y-1">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+                    <Truck className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+                    Deployed CAD Unit
+                  </div>
+                  <div className="text-xs font-bold text-white">
+                    {selectedIncident.assigned_unit}
+                  </div>
+                </div>
+              )}
 
               {/* Dedicated Ocular Evidence Section */}
               {selectedIncident.evidence_image_url && (
@@ -574,7 +653,7 @@ export default function RescuerDashboardPage() {
                     <img
                       src={selectedIncident.evidence_image_url}
                       alt="Ground Evidence"
-                      className="w-full h-36 object-cover group-hover:scale-105 transition-transform duration-300"
+                      className="w-full h-32 object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-end p-2">
                       <span className="text-[10px] text-neutral-200 font-mono flex items-center gap-1">
@@ -655,7 +734,7 @@ export default function RescuerDashboardPage() {
                 </div>
               )}
 
-              {/* CLOSEST RESPONSE BASES */}
+              {/* First Responder Base References */}
               <div className="space-y-1.5 pt-1 border-t border-neutral-800">
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block">
                   First Responder Posts (Fire / NDRF / Medical)
@@ -692,7 +771,7 @@ export default function RescuerDashboardPage() {
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block mb-1">
                   Corroborated Field Logs ({selectedIncident.caller_notes?.length || 0})
                 </span>
-                <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
+                <div className="max-h-20 overflow-y-auto space-y-1 pr-1">
                   {selectedIncident.caller_notes?.map((note, idx) => (
                     <div key={idx} className="p-2 bg-neutral-950 rounded border border-neutral-800 text-xs text-neutral-300">
                       • {note}
@@ -702,23 +781,56 @@ export default function RescuerDashboardPage() {
               </div>
             </div>
 
-            {/* Tactical Actions */}
+            {/* CAD DISPATCH CONTROL SUITE */}
             {viewTab === 'ACTIVE' && (
-              <div className="space-y-2 pt-3 border-t border-neutral-800">
-                <button
-                  type="button"
-                  onClick={() => updateIncidentStatus(selectedIncident.id, 'dispatched')}
-                  className="w-full py-2.5 rounded bg-blue-600 hover:bg-blue-500 font-bold text-xs uppercase tracking-wider transition-colors"
-                >
-                  Mark Rescuers Dispatched
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateIncidentStatus(selectedIncident.id, 'resolved')}
-                  className="w-full py-2.5 rounded bg-emerald-700 hover:bg-emerald-600 font-bold text-xs uppercase tracking-wider transition-colors"
-                >
-                  Mark Incident Resolved
-                </button>
+              <div className="space-y-2.5 pt-3 border-t border-neutral-800 bg-neutral-950/80 -mx-4 -mb-4 p-4 rounded-b-none border-t-neutral-800">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-mono uppercase font-bold text-neutral-300 flex items-center gap-1">
+                      <Truck className="w-3.5 h-3.5 text-blue-400" />
+                      <span>CAD Resource Allocation</span>
+                    </label>
+                    <span className="text-[9px] font-mono text-amber-400">
+                      Auto-Recommended
+                    </span>
+                  </div>
+
+                  <select
+                    value={selectedUnit}
+                    onChange={(e) => setSelectedUnit(e.target.value)}
+                    className="w-full bg-neutral-900 border border-neutral-700 text-neutral-100 text-xs rounded-lg p-2 focus:outline-none focus:border-blue-500 font-sans"
+                  >
+                    {AVAILABLE_CAD_UNITS.map((unit) => (
+                      <option key={unit.id} value={unit.name}>
+                        [{unit.category.toUpperCase()}] {unit.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={handleDispatchUnit}
+                    className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 font-black text-xs uppercase tracking-wider transition-colors text-white flex items-center justify-center gap-1.5 shadow-[0_0_15px_rgba(37,99,235,0.3)]"
+                  >
+                    <Truck className="w-4 h-4" />
+                    <span>
+                      {selectedIncident.status === 'dispatched'
+                        ? 'Reassign & Update Unit'
+                        : 'Deploy & Dispatch Unit'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleResolveIncident}
+                    className="w-full py-2 rounded-lg bg-neutral-900 hover:bg-emerald-950 border border-neutral-800 hover:border-emerald-700 font-bold text-xs uppercase tracking-wider transition-colors text-neutral-300 hover:text-emerald-300 flex items-center justify-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Mark Incident Resolved</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -735,7 +847,6 @@ export default function RescuerDashboardPage() {
             className="relative max-w-3xl w-full bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
             <div className="p-3 border-b border-neutral-800 flex items-center justify-between bg-neutral-950">
               <div className="flex items-center gap-2">
                 <Camera className="w-4 h-4 text-sky-400" />
@@ -753,7 +864,6 @@ export default function RescuerDashboardPage() {
               </button>
             </div>
 
-            {/* Photo View */}
             <div className="bg-black flex items-center justify-center max-h-[65vh] overflow-hidden">
               <img
                 src={activePhotoModal.url}
@@ -762,12 +872,16 @@ export default function RescuerDashboardPage() {
               />
             </div>
 
-            {/* Metadata Footer */}
             <div className="p-3.5 bg-neutral-950 border-t border-neutral-800 flex items-center justify-between text-xs">
               <div className="space-y-0.5">
                 <div className="text-neutral-300 font-semibold">
                   Hazard: <strong className="text-white uppercase">{activePhotoModal.incident.hazard_type}</strong> &bull; Priority: {activePhotoModal.incident.priority_score}/100
                 </div>
+                {activePhotoModal.incident.assigned_unit && (
+                  <div className="text-blue-400 text-[11px]">
+                    Assigned Unit: <strong>{activePhotoModal.incident.assigned_unit}</strong>
+                  </div>
+                )}
                 {activePhotoModal.incident.ai_verification && (
                   <p className="text-[11px] text-neutral-400 leading-snug">
                     AI Assessment: {activePhotoModal.incident.ai_verification.observations}

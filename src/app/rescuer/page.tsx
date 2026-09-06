@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabaseClient';
 import { Incident } from '@/components/RescuerMap';
-import { EMERGENCY_BASES, calculateDistanceKm } from '@/data/emergencyBases';
+import { EMERGENCY_BASES, calculateDistanceKm, EmergencyBase } from '@/data/emergencyBases';
 import { 
   ShieldAlert, 
   Users, 
@@ -40,7 +40,6 @@ const RescuerMap = dynamic(() => import('@/components/RescuerMap'), {
   ),
 });
 
-// Operational Field Response Assets for CAD Dispatch
 const AVAILABLE_CAD_UNITS = [
   { id: 'ndrf-boat-alpha', name: 'NDRF Inflatable Flood Boat Alpha', category: 'Flood' },
   { id: 'ndrf-boat-bravo', name: 'NDRF Inflatable Flood Boat Bravo', category: 'Flood' },
@@ -78,20 +77,14 @@ export default function RescuerDashboardPage() {
   const [audioAlertsEnabled, setAudioAlertsEnabled] = useState(true);
   const [showBases, setShowBases] = useState(true);
 
-  // CAD Unit Selection State
   const [selectedUnit, setSelectedUnit] = useState<string>('');
-
-  // Broadcast Modal State
   const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [broadcastSent, setBroadcastSent] = useState(false);
-
-  // Fullscreen Photo Lightbox State
   const [activePhotoModal, setActivePhotoModal] = useState<{ url: string; incident: Incident } | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // Keep recommended unit in sync when selected incident changes
   useEffect(() => {
     if (selectedIncident) {
       if (selectedIncident.assigned_unit) {
@@ -100,7 +93,7 @@ export default function RescuerDashboardPage() {
         setSelectedUnit(getRecommendedUnit(selectedIncident.hazard_type));
       }
     }
-  }, [selectedIncident?.id, selectedIncident?.hazard_type, selectedIncident?.assigned_unit]);
+  }, [selectedIncident]);
 
   const playTacticalChime = () => {
     if (!audioAlertsEnabled) return;
@@ -128,7 +121,7 @@ export default function RescuerDashboardPage() {
       osc.start();
       osc.stop(ctx.currentTime + 0.35);
     } catch {
-      // Audio autoplay policy fallback
+      // Autoplay fallback
     }
   };
 
@@ -202,7 +195,6 @@ export default function RescuerDashboardPage() {
     };
   }, [viewTab, audioAlertsEnabled]);
 
-  // CAD Dispatch Action: Bind unit and update status atomically
   const handleDispatchUnit = async () => {
     if (!selectedIncident) return;
     const unitToAssign = selectedUnit || getRecommendedUnit(selectedIncident.hazard_type);
@@ -326,7 +318,7 @@ export default function RescuerDashboardPage() {
         .slice(0, 2)
     : [];
 
-  const nearestShelter = selectedIncident
+  const sheltersList = selectedIncident
     ? EMERGENCY_BASES.filter((b) => b.type === 'SHELTER')
         .map((b) => ({
           ...b,
@@ -337,12 +329,14 @@ export default function RescuerDashboardPage() {
             b.longitude
           ),
         }))
-        .sort((a, b) => a.distanceKm - b.distanceKm)[0]
-    : null;
+        .sort((a, b) => a.distanceKm - b.distanceKm)
+    : [];
+
+  const nearestShelter: (EmergencyBase & { distanceKm: number }) | null =
+    sheltersList.length > 0 ? sheltersList[0] : null;
 
   return (
     <div className="h-screen w-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden font-sans">
-      {/* Primary Command Header */}
       <header className="h-14 border-b border-neutral-800 px-4 flex items-center justify-between bg-neutral-900 shrink-0">
         <div className="flex items-center gap-3">
           <ShieldAlert className="w-6 h-6 text-red-500" />
@@ -405,7 +399,6 @@ export default function RescuerDashboardPage() {
         </div>
       </header>
 
-      {/* Situational Aggregates Telemetry Ribbon */}
       <section className="h-10 bg-neutral-900/90 border-b border-neutral-800/80 px-4 flex items-center justify-between text-xs font-mono shrink-0 select-none overflow-x-auto no-scrollbar">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
@@ -446,9 +439,7 @@ export default function RescuerDashboardPage() {
         </div>
       </section>
 
-      {/* Main Operating Grid */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Column: Triage Queue */}
         <div className="w-88 border-r border-neutral-800 flex flex-col bg-neutral-900/40 shrink-0">
           <div className="grid grid-cols-2 border-b border-neutral-800 text-xs font-mono font-bold">
             <button
@@ -477,7 +468,6 @@ export default function RescuerDashboardPage() {
             </button>
           </div>
 
-          {/* Filter Chips with Emojis */}
           <div className="p-2.5 border-b border-neutral-800 flex items-center gap-1 overflow-x-auto text-[11px] font-mono no-scrollbar">
             {[
               { id: 'ALL', label: 'ALL' },
@@ -562,7 +552,6 @@ export default function RescuerDashboardPage() {
                       </span>
                     </div>
 
-                    {/* Show Assigned Unit if Dispatched */}
                     {item.assigned_unit && (
                       <div className="text-[10px] font-mono text-blue-300 flex items-center gap-1 truncate my-0.5">
                         <Truck className="w-3 h-3 text-blue-400 shrink-0" />
@@ -580,7 +569,6 @@ export default function RescuerDashboardPage() {
           </div>
         </div>
 
-        {/* Center: Surface Map */}
         <div className="flex-1 relative bg-neutral-950">
           <RescuerMap
             incidents={filteredIncidents}
@@ -595,7 +583,6 @@ export default function RescuerDashboardPage() {
           />
         </div>
 
-        {/* Right Column: Dispatch & CAD Assignment Panel */}
         {selectedIncident && (
           <div className="w-96 border-l border-neutral-800 p-4 flex flex-col justify-between bg-neutral-900/70 shrink-0 overflow-y-auto">
             <div className="space-y-4">
@@ -615,7 +602,6 @@ export default function RescuerDashboardPage() {
                 </span>
               </div>
 
-              {/* ACTIVE DEPLOYED ASSET BANNER */}
               {selectedIncident.assigned_unit && (
                 <div className="p-2.5 bg-blue-950/60 border border-blue-700 rounded-xl space-y-1">
                   <div className="text-[10px] font-black uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
@@ -628,7 +614,6 @@ export default function RescuerDashboardPage() {
                 </div>
               )}
 
-              {/* Dedicated Ocular Evidence Section */}
               {selectedIncident.evidence_image_url && (
                 <div className="p-3 bg-neutral-950 rounded-xl border border-sky-900/60 space-y-2.5">
                   <div className="flex items-center justify-between text-xs">
@@ -701,7 +686,6 @@ export default function RescuerDashboardPage() {
                 </div>
               </div>
 
-              {/* NEAREST SAFE EVACUATION SHELTER */}
               {nearestShelter && (
                 <div className="p-2.5 bg-emerald-950/40 border border-emerald-800 rounded-xl space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -734,7 +718,6 @@ export default function RescuerDashboardPage() {
                 </div>
               )}
 
-              {/* First Responder Base References */}
               <div className="space-y-1.5 pt-1 border-t border-neutral-800">
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block">
                   First Responder Posts (Fire / NDRF / Medical)
@@ -766,7 +749,6 @@ export default function RescuerDashboardPage() {
                 </div>
               </div>
 
-              {/* Field Logs */}
               <div className="pt-1 border-t border-neutral-800">
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block mb-1">
                   Corroborated Field Logs ({selectedIncident.caller_notes?.length || 0})
@@ -781,7 +763,6 @@ export default function RescuerDashboardPage() {
               </div>
             </div>
 
-            {/* CAD DISPATCH CONTROL SUITE */}
             {viewTab === 'ACTIVE' && (
               <div className="space-y-2.5 pt-3 border-t border-neutral-800 bg-neutral-950/80 -mx-4 -mb-4 p-4 rounded-b-none border-t-neutral-800">
                 <div className="space-y-1">
@@ -837,7 +818,6 @@ export default function RescuerDashboardPage() {
         )}
       </div>
 
-      {/* FULLSCREEN PHOTO INSPECTION LIGHTBOX */}
       {activePhotoModal && (
         <div 
           className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4"
@@ -901,7 +881,6 @@ export default function RescuerDashboardPage() {
         </div>
       )}
 
-      {/* EVACUATION BROADCAST MODAL */}
       {isBroadcastOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">

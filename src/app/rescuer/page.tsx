@@ -28,7 +28,11 @@ import {
   Sparkles,
   Camera,
   Eye,
-  CheckCircle2
+  CheckCircle2,
+  FileText,
+  Copy,
+  Printer,
+  Loader2
 } from 'lucide-react';
 
 const RescuerMap = dynamic(() => import('@/components/RescuerMap'), {
@@ -77,11 +81,23 @@ export default function RescuerDashboardPage() {
   const [audioAlertsEnabled, setAudioAlertsEnabled] = useState(true);
   const [showBases, setShowBases] = useState(true);
 
+  // CAD Unit Selection State
   const [selectedUnit, setSelectedUnit] = useState<string>('');
+
+  // Broadcast Modal State
   const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [broadcastSent, setBroadcastSent] = useState(false);
+
+  // Fullscreen Photo Lightbox State
   const [activePhotoModal, setActivePhotoModal] = useState<{ url: string; incident: Incident } | null>(null);
+
+  // After-Action Report (AAR) State
+  const [isAarModalOpen, setIsAarModalOpen] = useState(false);
+  const [isGeneratingAar, setIsGeneratingAar] = useState(false);
+  const [aarReport, setAarReport] = useState<string | null>(null);
+  const [aarIncidentTarget, setAarIncidentTarget] = useState<Incident | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -121,7 +137,7 @@ export default function RescuerDashboardPage() {
       osc.start();
       osc.stop(ctx.currentTime + 0.35);
     } catch {
-      // Autoplay fallback
+      // Audio autoplay policy fallback
     }
   };
 
@@ -219,6 +235,43 @@ export default function RescuerDashboardPage() {
       .from('distress_incidents')
       .update({ status: 'resolved', updated_at: new Date().toISOString() })
       .eq('id', selectedIncident.id);
+  };
+
+  const handleGenerateAar = async (targetIncident: Incident) => {
+    setAarIncidentTarget(targetIncident);
+    setIsGeneratingAar(true);
+    setAarReport(null);
+    setIsAarModalOpen(true);
+
+    try {
+      const res = await fetch('/api/generate-aar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ incident: targetIncident }),
+      });
+
+      const data = await res.json();
+      if (data?.report) {
+        setAarReport(data.report);
+      } else {
+        setAarReport('Failed to generate AAR narrative.');
+      }
+    } catch (err) {
+      setAarReport('Network error communicating with AI evaluation service.');
+    } finally {
+      setIsGeneratingAar(false);
+    }
+  };
+
+  const handleCopyAar = () => {
+    if (!aarReport) return;
+    navigator.clipboard.writeText(aarReport);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
+  };
+
+  const handlePrintAar = () => {
+    window.print();
   };
 
   const handleTransmitBroadcast = async () => {
@@ -337,6 +390,7 @@ export default function RescuerDashboardPage() {
 
   return (
     <div className="h-screen w-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden font-sans">
+      {/* Header */}
       <header className="h-14 border-b border-neutral-800 px-4 flex items-center justify-between bg-neutral-900 shrink-0">
         <div className="flex items-center gap-3">
           <ShieldAlert className="w-6 h-6 text-red-500" />
@@ -344,7 +398,7 @@ export default function RescuerDashboardPage() {
             <h1 className="text-sm font-black tracking-wider uppercase">
               Incident Command System (ICS) — Sector Command
             </h1>
-            <p className="text-[11px] text-neutral-400">Common Operating Picture & CAD Resource Allocation</p>
+            <p className="text-[11px] text-neutral-400">Common Operating Picture & Automated AAR Evaluation</p>
           </div>
         </div>
 
@@ -399,6 +453,7 @@ export default function RescuerDashboardPage() {
         </div>
       </header>
 
+      {/* Telemetry Bar */}
       <section className="h-10 bg-neutral-900/90 border-b border-neutral-800/80 px-4 flex items-center justify-between text-xs font-mono shrink-0 select-none overflow-x-auto no-scrollbar">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
@@ -434,12 +489,14 @@ export default function RescuerDashboardPage() {
           </div>
 
           <div className="text-neutral-500 text-[11px]">
-            Active Clusters: <strong className="text-neutral-200">{incidents.length}</strong>
+            {viewTab === 'ACTIVE' ? 'Active Clusters:' : 'Resolved Records:'} <strong className="text-neutral-200">{incidents.length}</strong>
           </div>
         </div>
       </section>
 
+      {/* Grid Body */}
       <div className="flex-1 flex overflow-hidden">
+        {/* Left Column: Triage Queue */}
         <div className="w-88 border-r border-neutral-800 flex flex-col bg-neutral-900/40 shrink-0">
           <div className="grid grid-cols-2 border-b border-neutral-800 text-xs font-mono font-bold">
             <button
@@ -569,6 +626,7 @@ export default function RescuerDashboardPage() {
           </div>
         </div>
 
+        {/* Center: Surface Map */}
         <div className="flex-1 relative bg-neutral-950">
           <RescuerMap
             incidents={filteredIncidents}
@@ -583,6 +641,7 @@ export default function RescuerDashboardPage() {
           />
         </div>
 
+        {/* Right Column: Dispatch & CAD Panel */}
         {selectedIncident && (
           <div className="w-96 border-l border-neutral-800 p-4 flex flex-col justify-between bg-neutral-900/70 shrink-0 overflow-y-auto">
             <div className="space-y-4">
@@ -602,6 +661,7 @@ export default function RescuerDashboardPage() {
                 </span>
               </div>
 
+              {/* ACTIVE DEPLOYED ASSET BANNER */}
               {selectedIncident.assigned_unit && (
                 <div className="p-2.5 bg-blue-950/60 border border-blue-700 rounded-xl space-y-1">
                   <div className="text-[10px] font-black uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
@@ -614,6 +674,7 @@ export default function RescuerDashboardPage() {
                 </div>
               )}
 
+              {/* Ground Photo Evidence */}
               {selectedIncident.evidence_image_url && (
                 <div className="p-3 bg-neutral-950 rounded-xl border border-sky-900/60 space-y-2.5">
                   <div className="flex items-center justify-between text-xs">
@@ -686,6 +747,7 @@ export default function RescuerDashboardPage() {
                 </div>
               </div>
 
+              {/* NEAREST SAFE EVACUATION SHELTER */}
               {nearestShelter && (
                 <div className="p-2.5 bg-emerald-950/40 border border-emerald-800 rounded-xl space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -718,6 +780,7 @@ export default function RescuerDashboardPage() {
                 </div>
               )}
 
+              {/* Nearby Bases */}
               <div className="space-y-1.5 pt-1 border-t border-neutral-800">
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block">
                   First Responder Posts (Fire / NDRF / Medical)
@@ -749,6 +812,7 @@ export default function RescuerDashboardPage() {
                 </div>
               </div>
 
+              {/* Field Logs */}
               <div className="pt-1 border-t border-neutral-800">
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block mb-1">
                   Corroborated Field Logs ({selectedIncident.caller_notes?.length || 0})
@@ -763,7 +827,8 @@ export default function RescuerDashboardPage() {
               </div>
             </div>
 
-            {viewTab === 'ACTIVE' && (
+            {/* Tactical Actions or AAR Button */}
+            {viewTab === 'ACTIVE' ? (
               <div className="space-y-2.5 pt-3 border-t border-neutral-800 bg-neutral-950/80 -mx-4 -mb-4 p-4 rounded-b-none border-t-neutral-800">
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
@@ -813,11 +878,112 @@ export default function RescuerDashboardPage() {
                   </button>
                 </div>
               </div>
+            ) : (
+              /* RESOLVED VIEW: GENERATE AAR ACTION */
+              <div className="pt-3 border-t border-neutral-800 -mx-4 -mb-4 p-4 bg-neutral-950/80">
+                <button
+                  type="button"
+                  onClick={() => handleGenerateAar(selectedIncident)}
+                  className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 font-black text-xs uppercase tracking-wider text-white flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(168,85,247,0.4)] transition-all"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Generate AI After-Action Report (AAR)</span>
+                </button>
+              </div>
             )}
           </div>
         )}
       </div>
 
+      {/* AI AFTER-ACTION REPORT (AAR) MODAL */}
+      {isAarModalOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={() => setIsAarModalOpen(false)}
+        >
+          <div 
+            className="relative max-w-3xl w-full bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-purple-950 border border-purple-800 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-purple-400" />
+                </div>
+                <div>
+                  <h2 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-2">
+                    <span>After-Action Report &bull; Incident Debrief</span>
+                    <span className="px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800 text-[10px] font-mono">
+                      GEMINI FLASH 2.5
+                    </span>
+                  </h2>
+                  <p className="text-[10px] font-mono text-neutral-400">
+                    Cluster {aarIncidentTarget?.id.slice(0, 16)} &bull; {aarIncidentTarget?.hazard_type.toUpperCase()}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyAar}
+                  disabled={isGeneratingAar || !aarReport}
+                  className="px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs font-mono font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  title="Copy Report to Clipboard"
+                >
+                  {isCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{isCopied ? 'COPIED' : 'COPY'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePrintAar}
+                  disabled={isGeneratingAar || !aarReport}
+                  className="px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 text-xs font-mono font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  title="Print / Save as PDF"
+                >
+                  <Printer className="w-3.5 h-3.5 text-blue-400" />
+                  <span>PRINT / PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAarModalOpen(false)}
+                  className="text-neutral-400 hover:text-white p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-6 overflow-y-auto font-mono text-xs text-neutral-300 space-y-4 leading-relaxed bg-neutral-950 selection:bg-purple-900">
+              {isGeneratingAar ? (
+                <div className="py-20 flex flex-col items-center justify-center gap-3 text-center">
+                  <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+                  <span className="font-bold text-neutral-200">Synthesizing Incident Log & CAD Efficacy Telemetry...</span>
+                  <p className="text-[11px] text-neutral-500 max-w-sm">
+                    Querying Gemini 2.5 Flash to evaluate spatial corroboration, assigned response assets, and hazard mitigation metrics.
+                  </p>
+                </div>
+              ) : (
+                <div className="whitespace-pre-wrap font-sans text-xs text-neutral-200 leading-normal space-y-2 prose prose-invert max-w-none">
+                  {aarReport}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 bg-neutral-950 border-t border-neutral-800 flex items-center justify-between text-[10px] font-mono text-neutral-400">
+              <span>FEMA / NDRF Operational Doctrine Standards</span>
+              <span>Project Sanket Incident Command</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FULLSCREEN PHOTO LIGHTBOX */}
       {activePhotoModal && (
         <div 
           className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4"
@@ -881,6 +1047,7 @@ export default function RescuerDashboardPage() {
         </div>
       )}
 
+      {/* EVACUATION BROADCAST MODAL */}
       {isBroadcastOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">

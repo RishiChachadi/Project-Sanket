@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabaseClient';
 import { Incident } from '@/components/RescuerMap';
@@ -22,17 +22,18 @@ import {
   Archive, 
   AlertCircle, 
   X, 
-  Tent,
-  Truck,
-  AlertTriangle,
-  Sparkles,
-  Camera,
-  Eye,
-  CheckCircle2,
-  FileText,
-  Copy,
-  Printer,
-  Loader2
+  Tent, 
+  Truck, 
+  AlertTriangle, 
+  Sparkles, 
+  Camera, 
+  Eye, 
+  CheckCircle2, 
+  FileText, 
+  Copy, 
+  Printer, 
+  Loader2,
+  MapPin
 } from 'lucide-react';
 
 const RescuerMap = dynamic(() => import('@/components/RescuerMap'), {
@@ -81,6 +82,10 @@ export default function RescuerDashboardPage() {
   const [audioAlertsEnabled, setAudioAlertsEnabled] = useState(true);
   const [showBases, setShowBases] = useState(true);
 
+  // Reverse Geocoding Cache State: incidentId -> locality string
+  const [localityCache, setLocalityCache] = useState<Record<string, string>>({});
+  const [isLoadingLocality, setIsLoadingLocality] = useState(false);
+
   // CAD Unit Selection State
   const [selectedUnit, setSelectedUnit] = useState<string>('');
 
@@ -101,6 +106,26 @@ export default function RescuerDashboardPage() {
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
+  // Fetch human-readable locality on incident selection
+  const resolveIncidentLocality = useCallback(async (inc: Incident) => {
+    if (localityCache[inc.id]) return;
+
+    setIsLoadingLocality(true);
+    try {
+      const res = await fetch(`/api/reverse-geocode?lat=${inc.latitude}&lng=${inc.longitude}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.locality) {
+          setLocalityCache((prev) => ({ ...prev, [inc.id]: data.locality }));
+        }
+      }
+    } catch {
+      // Graceful fallback
+    } finally {
+      setIsLoadingLocality(false);
+    }
+  }, [localityCache]);
+
   useEffect(() => {
     if (selectedIncident) {
       if (selectedIncident.assigned_unit) {
@@ -108,8 +133,9 @@ export default function RescuerDashboardPage() {
       } else {
         setSelectedUnit(getRecommendedUnit(selectedIncident.hazard_type));
       }
+      resolveIncidentLocality(selectedIncident);
     }
-  }, [selectedIncident]);
+  }, [selectedIncident, resolveIncidentLocality]);
 
   const playTacticalChime = () => {
     if (!audioAlertsEnabled) return;
@@ -254,9 +280,9 @@ export default function RescuerDashboardPage() {
       if (data?.report) {
         setAarReport(data.report);
       } else {
-        setAarReport(data?.error || 'Unable to load debrief report.');
+        setAarReport(data?.error || 'Failed to generate AAR narrative.');
       }
-    } catch (err) {
+    } catch {
       setAarReport('Network error communicating with AI evaluation service.');
     } finally {
       setIsGeneratingAar(false);
@@ -314,6 +340,7 @@ export default function RescuerDashboardPage() {
       'Evidence Photo URL',
       'Latitude',
       'Longitude',
+      'Sector Locality',
       'Field Notes',
       'Created At'
     ];
@@ -330,6 +357,7 @@ export default function RescuerDashboardPage() {
       `"${inc.evidence_image_url || ''}"`,
       inc.latitude,
       inc.longitude,
+      `"${localityCache[inc.id] || 'Pending Resolution'}"`,
       `"${(inc.caller_notes || []).join(' | ').replace(/"/g, '""')}"`,
       `"${inc.created_at}"`
     ]);
@@ -390,7 +418,7 @@ export default function RescuerDashboardPage() {
 
   return (
     <div className="h-screen w-screen bg-neutral-950 text-neutral-100 flex flex-col overflow-hidden font-sans">
-      {/* Header */}
+      {/* Primary Header */}
       <header className="h-14 border-b border-neutral-800 px-4 flex items-center justify-between bg-neutral-900 shrink-0">
         <div className="flex items-center gap-3">
           <ShieldAlert className="w-6 h-6 text-red-500" />
@@ -494,7 +522,7 @@ export default function RescuerDashboardPage() {
         </div>
       </section>
 
-      {/* Grid Body */}
+      {/* Grid */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Column: Triage Queue */}
         <div className="w-88 border-r border-neutral-800 flex flex-col bg-neutral-900/40 shrink-0">
@@ -559,6 +587,7 @@ export default function RescuerDashboardPage() {
                 const isSelected = selectedIncident?.id === item.id;
                 const hazardInfo = getHazardBadge(item.hazard_type);
                 const hasPhoto = Boolean(item.evidence_image_url);
+                const cachedLocality = localityCache[item.id];
 
                 return (
                   <div
@@ -608,6 +637,14 @@ export default function RescuerDashboardPage() {
                         {item.corroboration_count}x corroborated
                       </span>
                     </div>
+
+                    {/* Sector Locality in Queue Card */}
+                    {cachedLocality && (
+                      <div className="text-[11px] font-medium text-neutral-300 flex items-center gap-1 truncate my-0.5">
+                        <MapPin className="w-3 h-3 text-red-400 shrink-0" />
+                        <span className="truncate">{cachedLocality}</span>
+                      </div>
+                    )}
 
                     {item.assigned_unit && (
                       <div className="text-[10px] font-mono text-blue-300 flex items-center gap-1 truncate my-0.5">
@@ -661,7 +698,44 @@ export default function RescuerDashboardPage() {
                 </span>
               </div>
 
-              {/* ACTIVE DEPLOYED ASSET BANNER */}
+              {/* Reverse Geocoded Ground Sector */}
+              <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-xl space-y-1.5">
+                <span className="text-[10px] font-mono font-bold text-neutral-400 uppercase block">
+                  Ground Sector & Locality
+                </span>
+                <div className="text-xs font-bold text-white flex items-start gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+                  <span>
+                    {localityCache[selectedIncident.id] || (
+                      isLoadingLocality ? (
+                        <span className="text-neutral-400 flex items-center gap-1 font-mono font-normal text-[11px]">
+                          <Loader2 className="w-3 h-3 animate-spin" /> Resolving neighborhood...
+                        </span>
+                      ) : (
+                        `${selectedIncident.latitude.toFixed(4)}, ${selectedIncident.longitude.toFixed(4)}`
+                      )
+                    )}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-neutral-900 text-[11px] font-mono">
+                  <span className="text-neutral-400 flex items-center gap-1">
+                    <Navigation2 className="w-3 h-3 text-neutral-500" />
+                    {selectedIncident.latitude.toFixed(5)}, {selectedIncident.longitude.toFixed(5)}
+                  </span>
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${selectedIncident.latitude},${selectedIncident.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                  >
+                    <span>Route</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+
+              {/* Active Unit Banner */}
               {selectedIncident.assigned_unit && (
                 <div className="p-2.5 bg-blue-950/60 border border-blue-700 rounded-xl space-y-1">
                   <div className="text-[10px] font-black uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
@@ -674,7 +748,7 @@ export default function RescuerDashboardPage() {
                 </div>
               )}
 
-              {/* Ground Photo Evidence */}
+              {/* Photo Evidence */}
               {selectedIncident.evidence_image_url && (
                 <div className="p-3 bg-neutral-950 rounded-xl border border-sky-900/60 space-y-2.5">
                   <div className="flex items-center justify-between text-xs">
@@ -728,26 +802,7 @@ export default function RescuerDashboardPage() {
                 </div>
               )}
 
-              <div>
-                <span className="text-[10px] font-semibold text-neutral-400 uppercase block">Ground Coordinates</span>
-                <div className="flex items-center justify-between mt-1">
-                  <span className="text-xs font-mono text-white flex items-center gap-1">
-                    <Navigation2 className="w-3.5 h-3.5 text-red-500" />
-                    {selectedIncident.latitude.toFixed(5)}, {selectedIncident.longitude.toFixed(5)}
-                  </span>
-                  <a
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${selectedIncident.latitude},${selectedIncident.longitude}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[11px] font-mono text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                  >
-                    <span>Route</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              </div>
-
-              {/* NEAREST SAFE EVACUATION SHELTER */}
+              {/* Nearest Shelter */}
               {nearestShelter && (
                 <div className="p-2.5 bg-emerald-950/40 border border-emerald-800 rounded-xl space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -780,7 +835,7 @@ export default function RescuerDashboardPage() {
                 </div>
               )}
 
-              {/* Nearby Bases */}
+              {/* Nearby First Responder Posts */}
               <div className="space-y-1.5 pt-1 border-t border-neutral-800">
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block">
                   First Responder Posts (Fire / NDRF / Medical)
@@ -879,7 +934,6 @@ export default function RescuerDashboardPage() {
                 </div>
               </div>
             ) : (
-              /* RESOLVED VIEW: GENERATE AAR ACTION */
               <div className="pt-3 border-t border-neutral-800 -mx-4 -mb-4 p-4 bg-neutral-950/80">
                 <button
                   type="button"
@@ -895,7 +949,7 @@ export default function RescuerDashboardPage() {
         )}
       </div>
 
-      {/* AI AFTER-ACTION REPORT (AAR) MODAL */}
+      {/* AI AAR Modal */}
       {isAarModalOpen && (
         <div 
           className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
@@ -905,7 +959,6 @@ export default function RescuerDashboardPage() {
             className="relative max-w-3xl w-full bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
             <div className="p-4 border-b border-neutral-800 flex items-center justify-between bg-neutral-950">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-purple-950 border border-purple-800 flex items-center justify-center">
@@ -957,7 +1010,6 @@ export default function RescuerDashboardPage() {
               </div>
             </div>
 
-            {/* Content Body */}
             <div className="p-6 overflow-y-auto font-mono text-xs text-neutral-300 space-y-4 leading-relaxed bg-neutral-950 selection:bg-purple-900">
               {isGeneratingAar ? (
                 <div className="py-20 flex flex-col items-center justify-center gap-3 text-center">
@@ -974,7 +1026,6 @@ export default function RescuerDashboardPage() {
               )}
             </div>
 
-            {/* Footer */}
             <div className="p-3 bg-neutral-950 border-t border-neutral-800 flex items-center justify-between text-[10px] font-mono text-neutral-400">
               <span>FEMA / NDRF Operational Doctrine Standards</span>
               <span>Project Sanket Incident Command</span>
@@ -983,7 +1034,7 @@ export default function RescuerDashboardPage() {
         </div>
       )}
 
-      {/* FULLSCREEN PHOTO LIGHTBOX */}
+      {/* Fullscreen Photo Lightbox */}
       {activePhotoModal && (
         <div 
           className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4"
@@ -1047,7 +1098,7 @@ export default function RescuerDashboardPage() {
         </div>
       )}
 
-      {/* EVACUATION BROADCAST MODAL */}
+      {/* Evacuation Broadcast Modal */}
       {isBroadcastOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">

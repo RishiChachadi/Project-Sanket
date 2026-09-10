@@ -1,0 +1,14 @@
+# PROJECT SANKET — ARCHITECTURAL RULES FOR CLINE
+
+## Stack & Architecture
+- Framework: Next.js 15 (App Router), TypeScript, Tailwind CSS
+- Database: Supabase PostgreSQL with PostGIS extension (geography data types)
+- Realtime: Supabase Realtime channel subscriptions over WebSockets
+- Maps: React-Leaflet (MUST always be dynamically imported with { ssr: false } to prevent window undefined errors)
+- AI: Google Gemini 2.5 Flash via REST API
+
+## Strict Coding Constraints
+1. Always run `npx tsc --noEmit` after modifying code to verify TypeScript integrity before declaring a task complete.
+2. All Next.js Route Handlers (in `src/app/api/**/route.ts`) MUST include `export const dynamic = 'force-dynamic'`.
+3. When updating the `Incident` interface, synchronize both `src/components/RescuerMap.tsx` and `src/app/rescuer/page.tsx` simultaneously to prevent TS2339 errors.
+4. Keep the victim mobile bundle lightweight: ground evidence images must be compressed client-side to WebP (<35 KB) before database transmission.

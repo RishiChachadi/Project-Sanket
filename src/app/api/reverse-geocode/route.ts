@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-// In-memory server cache to avoid re-querying identical coordinates
 const geocodeCache = new Map<string, { locality: string; fullAddress: string }>();
 
 export async function GET(req: NextRequest) {
@@ -22,7 +21,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid coordinates' }, { status: 400 });
     }
 
-    // Quantize coordinates to 4 decimal places (~11 meters) for cache deduplication
     const cacheKey = `${parsedLat.toFixed(4)},${parsedLng.toFixed(4)}`;
     if (geocodeCache.has(cacheKey)) {
       return NextResponse.json(geocodeCache.get(cacheKey));
@@ -35,7 +33,7 @@ export async function GET(req: NextRequest) {
         'User-Agent': 'ProjectSanket-CAD/1.0 (disaster-response-system)',
         'Accept-Language': 'en',
       },
-      next: { revalidate: 86400 }, // Cache on Next.js edge for 24h
+      next: { revalidate: 86400 },
     });
 
     if (!response.ok) {
@@ -48,7 +46,6 @@ export async function GET(req: NextRequest) {
     const data = await response.json();
     const addr = data.address || {};
 
-    // Prioritize tactical neighborhood, locality, and subdistrict names
     const primary = addr.neighbourhood || addr.suburb || addr.residential || addr.road || addr.village;
     const secondary = addr.city_district || addr.subdistrict || addr.city || addr.town;
 

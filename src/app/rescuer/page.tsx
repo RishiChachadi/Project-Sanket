@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabaseClient';
 import { Incident } from '@/components/RescuerMap';
 import { EMERGENCY_BASES, calculateDistanceKm, EmergencyBase } from '@/data/emergencyBases';
+import { broadcastTacticalRadio } from '@/lib/tacticalRadio';
 import { 
   ShieldAlert, 
   Users, 
@@ -33,7 +34,10 @@ import {
   Copy, 
   Printer, 
   Loader2,
-  MapPin
+  MapPin,
+  Flame,
+  BatteryWarning,
+  Mic
 } from 'lucide-react';
 
 const RescuerMap = dynamic(() => import('@/components/RescuerMap'), {
@@ -81,8 +85,13 @@ export default function RescuerDashboardPage() {
   const [isLive, setIsLive] = useState(false);
   const [audioAlertsEnabled, setAudioAlertsEnabled] = useState(true);
   const [showBases, setShowBases] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(false);
 
-  // Reverse Geocoding Cache State: incidentId -> locality string
+  // Tactical Voice Radio State
+  const [tacticalRadioEnabled, setTacticalRadioEnabled] = useState(true);
+  const [activeRadioTransmission, setActiveRadioTransmission] = useState<string | null>(null);
+
+  // Reverse Geocoding Cache State
   const [localityCache, setLocalityCache] = useState<Record<string, string>>({});
   const [isLoadingLocality, setIsLoadingLocality] = useState(false);
 
@@ -106,7 +115,14 @@ export default function RescuerDashboardPage() {
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // Fetch human-readable locality on incident selection
+  const triggerRadioDispatch = useCallback((callout: string) => {
+    if (!tacticalRadioEnabled) return;
+    broadcastTacticalRadio(callout, {
+      onStart: () => setActiveRadioTransmission(callout),
+      onEnd: () => setActiveRadioTransmission(null),
+    });
+  }, [tacticalRadioEnabled]);
+
   const resolveIncidentLocality = useCallback(async (inc: Incident) => {
     if (localityCache[inc.id]) return;
 
@@ -163,7 +179,7 @@ export default function RescuerDashboardPage() {
       osc.start();
       osc.stop(ctx.currentTime + 0.35);
     } catch {
-      // Audio autoplay policy fallback
+      // Autoplay fallback
     }
   };
 
@@ -207,6 +223,14 @@ export default function RescuerDashboardPage() {
               setIncidents((prev) => [newRecord, ...prev]);
             }
             playTacticalChime();
+
+            // Automatic Radio Dispatch for Critical Incidents
+            if (newRecord.priority_score >= 75) {
+              const locality = localityCache[newRecord.id] || 'Sector Ground Zero';
+              triggerRadioDispatch(
+                `Attention Sector Command. Critical priority ${newRecord.priority_score} ${newRecord.hazard_type} incident logged at ${locality}. ${newRecord.headcount} souls reported in distress.`
+              );
+            }
           } else if (payload.eventType === 'UPDATE') {
             const updated = payload.new as Incident;
             if (viewTab === 'ACTIVE') {
@@ -235,7 +259,7 @@ export default function RescuerDashboardPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [viewTab, audioAlertsEnabled]);
+  }, [viewTab, audioAlertsEnabled, triggerRadioDispatch, localityCache]);
 
   const handleDispatchUnit = async () => {
     if (!selectedIncident) return;
@@ -253,6 +277,12 @@ export default function RescuerDashboardPage() {
         updated_at: new Date().toISOString() 
       })
       .eq('id', selectedIncident.id);
+
+    // Audio Radio Callout for Unit Deployment
+    const locality = localityCache[selectedIncident.id] || 'Target Sector';
+    triggerRadioDispatch(
+      `Sector Command to all units. ${unitToAssign} is dispatched and rolling to ${locality}. Stand by for on-scene telemetry.`
+    );
   };
 
   const handleResolveIncident = async () => {
@@ -261,6 +291,10 @@ export default function RescuerDashboardPage() {
       .from('distress_incidents')
       .update({ status: 'resolved', updated_at: new Date().toISOString() })
       .eq('id', selectedIncident.id);
+
+    triggerRadioDispatch(
+      `Incident ${selectedIncident.id.slice(0, 8)} confirmed safe and resolved. All units stand down.`
+    );
   };
 
   const handleGenerateAar = async (targetIncident: Incident) => {
@@ -334,6 +368,7 @@ export default function RescuerDashboardPage() {
       'Hazard Type',
       'Assigned CAD Unit',
       'Priority Score',
+      'Battery Level',
       'Headcount',
       'Corroboration Count',
       'AI Verified',
@@ -351,6 +386,7 @@ export default function RescuerDashboardPage() {
       `"${inc.hazard_type}"`,
       `"${inc.assigned_unit || 'UNASSIGNED'}"`,
       inc.priority_score,
+      inc.battery_level !== undefined && inc.battery_level !== null ? `${inc.battery_level}%` : 'N/A',
       inc.headcount,
       inc.corroboration_count,
       inc.ai_verification?.hazard_confirmed ? 'YES' : 'NO',
@@ -426,18 +462,47 @@ export default function RescuerDashboardPage() {
             <h1 className="text-sm font-black tracking-wider uppercase">
               Incident Command System (ICS) — Sector Command
             </h1>
-            <p className="text-[11px] text-neutral-400">Common Operating Picture & Automated AAR Evaluation</p>
+            <p className="text-[11px] text-neutral-400">Autonomous Tactical Radio Comms & CAD Coordination</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2.5 text-xs font-mono">
+          {/* TACTICAL RADIO COMM TOGGLE */}
+          <button
+            type="button"
+            onClick={() => setTacticalRadioEnabled(!tacticalRadioEnabled)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-all ${
+              tacticalRadioEnabled
+                ? 'border-emerald-600 bg-emerald-950/80 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
+                : 'border-neutral-800 bg-neutral-900 text-neutral-500'
+            }`}
+            title="Enable/Disable Procedural Voice Radio Dispatcher"
+          >
+            <Radio className={`w-3.5 h-3.5 ${tacticalRadioEnabled ? 'text-emerald-400 animate-pulse' : 'text-neutral-500'}`} />
+            <span>{tacticalRadioEnabled ? 'TAC RADIO: 142.85 MHz' : 'RADIO MUTED'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setIsBroadcastOpen(true)}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-red-600 hover:bg-red-500 text-white font-bold transition-colors shadow-[0_0_12px_rgba(239,68,68,0.4)]"
           >
             <Megaphone className="w-3.5 h-3.5" />
-            <span>BROADCAST ALERT</span>
+            <span>BROADCAST</span>
+          </button>
+
+          {/* DENSITY HEATMAP TOGGLE */}
+          <button
+            type="button"
+            onClick={() => setShowHeatmap(!showHeatmap)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border transition-colors ${
+              showHeatmap
+                ? 'border-red-600 bg-red-950/80 text-red-300 shadow-[0_0_10px_rgba(220,38,38,0.3)]'
+                : 'border-neutral-700 bg-neutral-800 hover:bg-neutral-750 text-neutral-300'
+            }`}
+          >
+            <Flame className={`w-3.5 h-3.5 ${showHeatmap ? 'text-red-400 animate-pulse' : 'text-neutral-400'}`} />
+            <span>{showHeatmap ? 'HEATMAP ON' : 'HEATMAP OFF'}</span>
           </button>
 
           <button
@@ -446,7 +511,7 @@ export default function RescuerDashboardPage() {
             className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-neutral-700 bg-neutral-800 hover:bg-neutral-750 text-neutral-300 transition-colors"
           >
             <Download className="w-3.5 h-3.5 text-blue-400" />
-            <span>EXPORT CSV</span>
+            <span>CSV</span>
           </button>
 
           <button
@@ -459,7 +524,7 @@ export default function RescuerDashboardPage() {
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
-            <span>{showBases ? 'BASES & SHELTERS ON' : 'BASES HIDDEN'}</span>
+            <span>{showBases ? 'BASES' : 'BASES OFF'}</span>
           </button>
 
           <button
@@ -471,15 +536,29 @@ export default function RescuerDashboardPage() {
                 : 'border-neutral-800 bg-neutral-900 text-neutral-600'
             }`}
           >
-            {audioAlertsEnabled ? <Volume2 className="w-3.5 h-3.5 text-emerald-400" /> : <VolumeX className="w-3.5 h-3.5" />}
+            {audioAlertsEnabled ? <Volume2 className="w-3.5 h-3.5 text-emerald-400" /> : <VolumeX className="w-3.5 h-3.5 text-neutral-600" />}
           </button>
 
           <div className="flex items-center gap-1.5 bg-neutral-800 px-2.5 py-1 rounded-md border border-neutral-700">
             <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-            <span>{isLive ? 'SOCKET LIVE' : 'CONNECTING'}</span>
+            <span>{isLive ? 'LIVE' : 'SYNC'}</span>
           </div>
         </div>
       </header>
+
+      {/* LIVE TACTICAL RADIO ON-AIR HUD TICKER */}
+      {activeRadioTransmission && (
+        <div className="h-7 bg-red-950/90 border-b border-red-800 px-4 flex items-center justify-between text-xs font-mono shrink-0 animate-pulse shadow-inner">
+          <div className="flex items-center gap-2 text-red-300 truncate">
+            <Radio className="w-3.5 h-3.5 text-red-400 animate-spin" />
+            <span className="font-bold uppercase text-[10px] bg-red-900/80 px-1.5 py-0.5 rounded text-white border border-red-600">
+              ON-AIR &bull; TAC-1
+            </span>
+            <span className="truncate tracking-wide">&quot;{activeRadioTransmission}&quot;</span>
+          </div>
+          <span className="text-[10px] text-red-400 font-bold shrink-0">TX ACTIVE</span>
+        </div>
+      )}
 
       {/* Telemetry Bar */}
       <section className="h-10 bg-neutral-900/90 border-b border-neutral-800/80 px-4 flex items-center justify-between text-xs font-mono shrink-0 select-none overflow-x-auto no-scrollbar">
@@ -588,6 +667,7 @@ export default function RescuerDashboardPage() {
                 const hazardInfo = getHazardBadge(item.hazard_type);
                 const hasPhoto = Boolean(item.evidence_image_url);
                 const cachedLocality = localityCache[item.id];
+                const isBatteryCritical = typeof item.battery_level === 'number' && item.battery_level <= 15;
 
                 return (
                   <div
@@ -638,11 +718,17 @@ export default function RescuerDashboardPage() {
                       </span>
                     </div>
 
-                    {/* Sector Locality in Queue Card */}
                     {cachedLocality && (
                       <div className="text-[11px] font-medium text-neutral-300 flex items-center gap-1 truncate my-0.5">
                         <MapPin className="w-3 h-3 text-red-400 shrink-0" />
                         <span className="truncate">{cachedLocality}</span>
+                      </div>
+                    )}
+
+                    {isBatteryCritical && (
+                      <div className="text-[10px] font-mono text-red-400 flex items-center gap-1 font-bold my-0.5 animate-pulse">
+                        <BatteryWarning className="w-3 h-3 text-red-500 shrink-0" />
+                        <span>CRITICAL BATTERY: {item.battery_level}% (COMM FAILURE IMMINENT)</span>
                       </div>
                     )}
 
@@ -669,6 +755,7 @@ export default function RescuerDashboardPage() {
             incidents={filteredIncidents}
             bases={EMERGENCY_BASES}
             showBases={showBases}
+            showHeatmap={showHeatmap}
             selectedIncident={selectedIncident}
             onSelectIncident={(inc) => setSelectedIncident(inc)}
             onViewPhoto={(url) => {
@@ -687,18 +774,63 @@ export default function RescuerDashboardPage() {
                   <span className="text-[10px] font-mono text-neutral-400 uppercase block">Cluster ID</span>
                   <span className="text-xs font-mono text-neutral-300">{selectedIncident.id.slice(0, 16)}...</span>
                 </div>
-                <span className={`px-2 py-0.5 rounded font-mono text-[10px] uppercase font-bold ${
-                  selectedIncident.status === 'dispatched' 
-                    ? 'bg-blue-950 text-blue-400 border border-blue-800' 
-                    : selectedIncident.status === 'resolved'
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                    : 'bg-neutral-800 text-neutral-300'
-                }`}>
-                  {selectedIncident.status}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {/* Manual Test Voice Callout Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const loc = localityCache[selectedIncident.id] || 'Target Sector';
+                      triggerRadioDispatch(
+                        `Dispatcher Alert. Sector ${loc}. ${selectedIncident.hazard_type} incident with priority score ${selectedIncident.priority_score}. ${selectedIncident.headcount} souls in immediate danger.`
+                      );
+                    }}
+                    className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700"
+                    title="Transmit Voice Radio Dispatch"
+                  >
+                    <Mic className="w-3.5 h-3.5 text-amber-400" />
+                  </button>
+
+                  <span className={`px-2 py-0.5 rounded font-mono text-[10px] uppercase font-bold ${
+                    selectedIncident.status === 'dispatched' 
+                      ? 'bg-blue-950 text-blue-400 border border-blue-800' 
+                      : selectedIncident.status === 'resolved'
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                      : 'bg-neutral-800 text-neutral-300'
+                  }`}>
+                    {selectedIncident.status}
+                  </span>
+                </div>
               </div>
 
-              {/* Reverse Geocoded Ground Sector */}
+              {/* Battery Warning */}
+              {typeof selectedIncident.battery_level === 'number' && (
+                <div className={`p-2.5 rounded-xl border space-y-1 ${
+                  selectedIncident.battery_level <= 15
+                    ? 'bg-red-950/60 border-red-700 text-red-200 shadow-[0_0_12px_rgba(239,68,68,0.3)]'
+                    : 'bg-neutral-950 border-neutral-800 text-neutral-300'
+                }`}>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-mono">
+                      <BatteryWarning className={`w-3.5 h-3.5 ${selectedIncident.battery_level <= 15 ? 'text-red-400 animate-pulse' : 'text-neutral-400'}`} />
+                      Victim Device Telemetry
+                    </span>
+                    <span className="font-mono font-black text-sm">
+                      {selectedIncident.battery_level}%
+                    </span>
+                  </div>
+                  {selectedIncident.battery_level <= 15 ? (
+                    <p className="text-[10px] text-red-300 leading-tight">
+                      Urgency boosted by +15 pts. Device power terminal failure anticipated within minutes.
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-neutral-400 leading-tight">
+                      Battery level stable. Live telemetry polling active.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Ground Sector */}
               <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-xl space-y-1.5">
                 <span className="text-[10px] font-mono font-bold text-neutral-400 uppercase block">
                   Ground Sector & Locality
@@ -735,7 +867,7 @@ export default function RescuerDashboardPage() {
                 </div>
               </div>
 
-              {/* Active Unit Banner */}
+              {/* Active Unit */}
               {selectedIncident.assigned_unit && (
                 <div className="p-2.5 bg-blue-950/60 border border-blue-700 rounded-xl space-y-1">
                   <div className="text-[10px] font-black uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
@@ -835,7 +967,7 @@ export default function RescuerDashboardPage() {
                 </div>
               )}
 
-              {/* Nearby First Responder Posts */}
+              {/* Responder Bases */}
               <div className="space-y-1.5 pt-1 border-t border-neutral-800">
                 <span className="text-[10px] font-semibold text-neutral-400 uppercase block">
                   First Responder Posts (Fire / NDRF / Medical)
@@ -918,8 +1050,8 @@ export default function RescuerDashboardPage() {
                     <Truck className="w-4 h-4" />
                     <span>
                       {selectedIncident.status === 'dispatched'
-                        ? 'Reassign & Update Unit'
-                        : 'Deploy & Dispatch Unit'}
+                        ? 'Reassign & Transmit Radio Dispatch'
+                        : 'Deploy & Transmit Radio Dispatch'}
                     </span>
                   </button>
 
@@ -1034,7 +1166,7 @@ export default function RescuerDashboardPage() {
         </div>
       )}
 
-      {/* Fullscreen Photo Lightbox */}
+      {/* Lightbox & Broadcast Modals */}
       {activePhotoModal && (
         <div 
           className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4"
@@ -1098,7 +1230,6 @@ export default function RescuerDashboardPage() {
         </div>
       )}
 
-      {/* Evacuation Broadcast Modal */}
       {isBroadcastOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
@@ -1119,7 +1250,7 @@ export default function RescuerDashboardPage() {
             </div>
 
             <p className="text-xs text-neutral-400 leading-relaxed">
-              This message will be pushed instantly via WebSocket to all citizens currently viewing the mobile SOS PWA, accompanied by an urgent haptic pattern.
+              This message will be pushed instantly via WebSocket to all citizens currently viewing the mobile SOS PWA.
             </p>
 
             <textarea

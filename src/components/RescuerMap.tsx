@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { EmergencyBase } from '@/data/emergencyBases';
@@ -15,6 +15,7 @@ export interface Incident {
   corroboration_count: number;
   status: string;
   assigned_unit?: string | null;
+  battery_level?: number | null;
   caller_notes: string[];
   source_channel: string;
   evidence_image_url?: string;
@@ -33,6 +34,7 @@ interface RescuerMapProps {
   incidents: Incident[];
   bases?: EmergencyBase[];
   showBases?: boolean;
+  showHeatmap?: boolean;
   selectedIncident: Incident | null;
   onSelectIncident: (inc: Incident) => void;
   onViewPhoto?: (url: string) => void;
@@ -48,12 +50,67 @@ function MapController({ selectedIncident }: { selectedIncident: Incident | null
   return null;
 }
 
+// Tactical Heatmap Sub-layer (leaflet.heat)
+function HeatmapOverlay({ incidents }: { incidents: Incident[] }) {
+  const map = useMap();
+  const heatLayerRef = useRef<any>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    // Dynamically load leaflet.heat on the client only
+    import('leaflet.heat').then(() => {
+      if (!isMounted) return;
+
+      if (heatLayerRef.current) {
+        map.removeLayer(heatLayerRef.current);
+        heatLayerRef.current = null;
+      }
+
+      // Convert incidents into [lat, lng, normalized_intensity] points
+      const heatPoints = incidents.map((inc) => {
+        const normalizedWeight = Math.min(1.0, Math.max(0.3, inc.priority_score / 100));
+        return [inc.latitude, inc.longitude, normalizedWeight];
+      });
+
+      // @ts-ignore - leaflet.heat attaches heatLayer to L
+      if (typeof L.heatLayer === 'function' && heatPoints.length > 0) {
+        // @ts-ignore
+        heatLayerRef.current = L.heatLayer(heatPoints, {
+          radius: 38,
+          blur: 28,
+          maxZoom: 16,
+          max: 1.0,
+          gradient: {
+            0.2: '#2563eb', // Blue (Low risk)
+            0.4: '#06b6d4', // Cyan
+            0.6: '#eab308', // Amber (Elevated)
+            0.8: '#ea580c', // Orange (Severe)
+            1.0: '#dc2626', // Crimson Red (Critical Hotspot)
+          },
+        }).addTo(map);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      if (heatLayerRef.current) {
+        map.removeLayer(heatLayerRef.current);
+        heatLayerRef.current = null;
+      }
+    };
+  }, [map, incidents]);
+
+  return null;
+}
+
 function createIncidentIcon(
   hazardType: string,
   priorityScore: number,
   corroborationCount: number,
   hasPhoto: boolean,
   isDispatched: boolean,
+  batteryLevel: number | null | undefined,
   isSelected: boolean
 ) {
   const h = hazardType.toLowerCase();
@@ -73,6 +130,7 @@ function createIncidentIcon(
   }
 
   const isCritical = priorityScore >= 75;
+  const isBatteryCritical = typeof batteryLevel === 'number' && batteryLevel <= 15;
 
   const html = `
     <div style="
@@ -163,6 +221,28 @@ function createIncidentIcon(
         </div>
       ` : ''}
 
+      <!-- Critical Battery Badge -->
+      ${isBatteryCritical ? `
+        <div style="
+          position: absolute;
+          bottom: 12px;
+          left: -6px;
+          background: #ef4444;
+          color: #ffffff;
+          border: 1.5px solid #ffffff;
+          border-radius: 9999px;
+          font-size: 8px;
+          font-weight: 900;
+          font-family: monospace;
+          padding: 1px 3px;
+          box-shadow: 0 2px 5px rgba(0,0,0,0.8);
+          line-height: 1;
+          animation: pulse 1s infinite;
+        " title="Device Battery: ${batteryLevel}%">
+          ⚡${batteryLevel}%
+        </div>
+      ` : ''}
+
       ${hasPhoto ? `
         <div style="
           position: absolute;
@@ -240,6 +320,7 @@ export default function RescuerMap({
   incidents,
   bases = [],
   showBases = true,
+  showHeatmap = false,
   selectedIncident,
   onSelectIncident,
   onViewPhoto,
@@ -260,6 +341,10 @@ export default function RescuerMap({
 
       <MapController selectedIncident={selectedIncident} />
 
+      {/* TACTICAL DENSITY HEATMAP LAYER */}
+      {showHeatmap && <HeatmapOverlay incidents={incidents} />}
+
+      {/* EMERGENCY INFRASTRUCTURE BASES */}
       {showBases &&
         bases.map((base) => (
           <Marker
@@ -280,6 +365,7 @@ export default function RescuerMap({
           </Marker>
         ))}
 
+      {/* INCIDENT PINS WITH BATTERY WARNING & DISPATCH BADGES */}
       {incidents.map((incident) => {
         const isSelected = selectedIncident?.id === incident.id;
         const hasPhoto = Boolean(incident.evidence_image_url);
@@ -291,6 +377,7 @@ export default function RescuerMap({
           incident.corroboration_count,
           hasPhoto,
           isDispatched,
+          incident.battery_level,
           isSelected
         );
 
@@ -310,6 +397,15 @@ export default function RescuerMap({
                   <span className="text-[10px] font-mono text-neutral-600">Score: {incident.priority_score}</span>
                 </div>
                 <div>Trapped: <strong>{incident.headcount} people</strong></div>
+
+                {typeof incident.battery_level === 'number' && (
+                  <div className={`p-1 rounded font-mono text-[10px] font-bold flex items-center justify-between ${
+                    incident.battery_level <= 15 ? 'bg-red-100 text-red-700 border border-red-300' : 'bg-neutral-100 text-neutral-700'
+                  }`}>
+                    <span>DEVICE BATTERY:</span>
+                    <span>{incident.battery_level}% {incident.battery_level <= 15 ? '⚠️ CRITICAL' : ''}</span>
+                  </div>
+                )}
 
                 {incident.assigned_unit && (
                   <div className="p-1.5 bg-blue-50 border border-blue-200 rounded text-[11px] text-blue-900">

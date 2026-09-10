@@ -246,6 +246,18 @@ async function compressImage(file: File): Promise<{ blob: Blob; dataUrl: string 
   });
 }
 
+async function getDeviceBatteryLevel(): Promise<number | null> {
+  try {
+    if (typeof navigator !== 'undefined' && 'getBattery' in navigator) {
+      const battery = await (navigator as any).getBattery();
+      return Math.round(battery.level * 100);
+    }
+  } catch {
+  
+  }
+  return null;
+}
+
 export default function VictimPage() {
   const [lang, setLang] = useState<Language>('EN');
   const t = TRANSLATIONS[lang];
@@ -451,6 +463,7 @@ export default function VictimPage() {
     const lng = coords?.lng || 77.5946;
 
     try {
+      const batteryLevel = await getDeviceBatteryLevel();
       const { data, error } = await supabase.rpc('ingest_distress_report', {
         p_lat: lat,
         p_lng: lng,
@@ -461,6 +474,30 @@ export default function VictimPage() {
       });
 
       if (error) throw error;
+
+      let boostedPriorityScore: number | null = null;
+      if (batteryLevel !== null && batteryLevel <= 15) {
+        const { data: existingIncident, error: existingIncidentError } = await supabase
+          .from('distress_incidents')
+          .select('priority_score')
+          .eq('id', data)
+          .single();
+
+        if (!existingIncidentError && existingIncident?.priority_score != null) {
+          boostedPriorityScore = Math.min(100, existingIncident.priority_score + 15);
+        }
+      }
+
+      const { error: batteryUpdateError } = await supabase
+        .from('distress_incidents')
+        .update({
+          battery_level: batteryLevel,
+          ...(boostedPriorityScore !== null ? { priority_score: boostedPriorityScore } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', data);
+
+      if (batteryUpdateError) throw batteryUpdateError;
 
       setIncidentId(data);
       setIncidentStatus('pending');
@@ -564,15 +601,18 @@ export default function VictimPage() {
       if (isTrapped) notesList.push('URGENT: Structure trapped / Water ingress');
       if (landmarkNotes.trim()) notesList.push(`Landmark: ${landmarkNotes.trim()}`);
 
+      const batteryLevel = await getDeviceBatteryLevel();
       let extraScore = 50;
       if (selectedHazard === 'Medical' || hasMedical) extraScore += 25;
       if (selectedHazard === 'Fire' || isTrapped) extraScore += 20;
       if (headcount > 3) extraScore += 15;
+      if (batteryLevel !== null && batteryLevel <= 15) extraScore += 15;
 
       const { error } = await supabase
         .from('distress_incidents')
         .update({
           headcount: headcount,
+          battery_level: batteryLevel,
           priority_score: Math.min(100, extraScore),
           caller_notes: notesList,
           updated_at: new Date().toISOString()

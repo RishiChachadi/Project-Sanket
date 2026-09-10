@@ -3,7 +3,6 @@ import {
   AlertOctagon, 
   ShieldAlert, 
   Radio, 
-  PhoneCall, 
   MapPin, 
   Sparkles, 
   WifiOff, 
@@ -37,7 +36,7 @@ export default function HomePage() {
       </header>
 
       {/* Primary Triage Gateway Cards */}
-      <div className="my-auto py-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="my-auto py-12 grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Card 1: Citizen SOS */}
         <Link
           href="/victim"
@@ -103,13 +102,13 @@ export default function HomePage() {
 
             <div className="pt-2 flex flex-wrap gap-2 text-[11px] font-mono text-neutral-400">
               <span className="flex items-center gap-1 bg-neutral-950 px-2 py-1 rounded border border-neutral-800">
-                <Layers className="w-3 h-3 text-blue-400" /> 50m Spatial Clusters
+                <Layers className="w-3.5 h-3.5 text-blue-400" /> 50m Spatial Clusters
               </span>
               <span className="flex items-center gap-1 bg-neutral-950 px-2 py-1 rounded border border-neutral-800">
-                <Sparkles className="w-3 h-3 text-purple-400" /> Gemini Vision AI
+                <Sparkles className="w-3.5 h-3.5 text-purple-400" /> Gemini Vision AI
               </span>
               <span className="flex items-center gap-1 bg-neutral-950 px-2 py-1 rounded border border-neutral-800">
-                <MapPin className="w-3 h-3 text-emerald-400" /> Safe Haven Routing
+                <MapPin className="w-3.5 h-3.5 text-emerald-400" /> Safe Haven Routing
               </span>
             </div>
           </div>
@@ -121,61 +120,10 @@ export default function HomePage() {
         </Link>
       </div>
 
-      {/* Emergency Quick-Dial Helpline Strip */}
-      <footer className="border-t border-neutral-800 pt-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
-            <PhoneCall className="w-3.5 h-3.5 text-red-500" />
-            National Emergency Direct Dial Lines
-          </span>
-          <span className="text-[10px] font-mono text-neutral-500">Toll-Free 24/7 Dispatch</span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-          <a
-            href="tel:112"
-            className="p-2.5 rounded-xl border border-neutral-800 bg-neutral-900/60 hover:bg-neutral-800 flex items-center justify-between group transition-colors"
-          >
-            <div>
-              <div className="text-[10px] text-neutral-400 uppercase">National All-in-One</div>
-              <div className="font-black text-white group-hover:text-red-400 text-sm">112</div>
-            </div>
-            <PhoneCall className="w-4 h-4 text-neutral-500 group-hover:text-white" />
-          </a>
-
-          <a
-            href="tel:101"
-            className="p-2.5 rounded-xl border border-neutral-800 bg-neutral-900/60 hover:bg-neutral-800 flex items-center justify-between group transition-colors"
-          >
-            <div>
-              <div className="text-[10px] text-neutral-400 uppercase">Fire & Rescue</div>
-              <div className="font-black text-white group-hover:text-amber-400 text-sm">101</div>
-            </div>
-            <PhoneCall className="w-4 h-4 text-neutral-500 group-hover:text-white" />
-          </a>
-
-          <a
-            href="tel:108"
-            className="p-2.5 rounded-xl border border-neutral-800 bg-neutral-900/60 hover:bg-neutral-800 flex items-center justify-between group transition-colors"
-          >
-            <div>
-              <div className="text-[10px] text-neutral-400 uppercase">Ambulance / Trauma</div>
-              <div className="font-black text-white group-hover:text-emerald-400 text-sm">108</div>
-            </div>
-            <PhoneCall className="w-4 h-4 text-neutral-500 group-hover:text-white" />
-          </a>
-
-          <a
-            href="tel:1077"
-            className="p-2.5 rounded-xl border border-neutral-800 bg-neutral-900/60 hover:bg-neutral-800 flex items-center justify-between group transition-colors"
-          >
-            <div>
-              <div className="text-[10px] text-neutral-400 uppercase">Disaster Control HQ</div>
-              <div className="font-black text-white group-hover:text-blue-400 text-sm">1077</div>
-            </div>
-            <PhoneCall className="w-4 h-4 text-neutral-500 group-hover:text-white" />
-          </a>
-        </div>
+      {/* Minimal System Attribution Footer */}
+      <footer className="border-t border-neutral-800/80 pt-4 flex flex-col sm:flex-row items-center justify-between text-[11px] font-mono text-neutral-500 gap-2">
+        <span>PROJECT SANKET &bull; HIGH-AVAILABILITY CRISIS RESPONSE SYSTEM</span>
+        <span>ZERO-LATENCY DETERMINISTIC DISPATCH</span>
       </footer>
     </main>
   );
